@@ -284,128 +284,131 @@
 }
 
 /* ============================================================
-   夜间模式：灰色大背景（遮罩）+ 黑色子模块（面板）+ 白色文本
+   夜间模式：灰色大背景（遮罩）+ 黑色子模块（面板/卡片）+ 白色文本
+   配色逻辑参考状态栏组件：浅色版为「白底→半透明白卡片→深灰文字」，
+   夜间版镜像为「灰色背景→黑色卡片→白色文字」。
    ============================================================ */
 
 /* 遮罩：灰色大背景 */
 #nqc-mask.night {
-    background: rgba(72, 72, 76, 0.6);
+    background: rgba(86, 86, 94, 0.68);
 }
 
 /* 面板：黑色子模块 */
 #nqc-panel.night {
-    background: #151517;
-    border-color: #2a2a2d;
-    box-shadow: -10px 10px 34px rgba(0, 0, 0, 0.5);
+    background: #000000;
+    border-color: #26262b;
+    box-shadow: -10px 10px 34px rgba(0, 0, 0, 0.55);
 }
 
 #nqc-panel.night #nqc-handle {
-    background: #3c3c41;
+    background: #3a3a40;
 }
 
 #nqc-panel.night .nqc-header {
-    border-bottom-color: #2a2a2d;
+    border-bottom-color: #1f1f24;
 }
 
 #nqc-panel.night .nqc-header-icon,
 #nqc-panel.night .nqc-header-title {
-    color: #f5f5f5;
+    color: #ffffff;
 }
 
 #nqc-panel.night .nqc-header-count {
-    color: #8a8a90;
+    color: #8e8e96;
 }
 
 /* 夜间切换按钮（面板内反色） */
 #nqc-panel.night .nqc-night-btn {
-    background: #1c1c1f;
-    border-color: #3a3a3f;
-    color: #c8c8cd;
+    background: #0d0d0f;
+    border-color: #2e2e33;
+    color: #c6c6ce;
 }
 
 #nqc-panel.night .nqc-night-btn:hover {
-    background: #26262a;
+    background: #1a1a1e;
     color: #ffffff;
-    border-color: #55555b;
+    border-color: #55555c;
 }
 
-/* 指令项：黑色子模块 + 白色文本 */
+/* 指令项：黑色子模块卡片 + 白色文本 */
 #nqc-panel.night .nqc-item {
-    background: #1c1c1f;
-    border-color: #2e2e33;
+    background: #0d0d0f;
+    border-color: #26262b;
 }
 
 #nqc-panel.night .nqc-item:hover {
-    background: #26262a;
+    background: #1a1a1e;
 }
 
 #nqc-panel.night .nqc-item-text {
-    color: #f0f0f0;
+    color: #ffffff;
 }
 
 #nqc-panel.night .nqc-item-del {
-    color: #6f6f76;
+    color: #6e6e76;
 }
 
 #nqc-panel.night .nqc-item-del:hover {
     color: #ffffff;
-    background: #333338;
+    background: #26262b;
 }
 
 /* 新增按钮 */
 #nqc-panel.night .nqc-add-btn {
-    background: #151517;
-    border-top-color: #2a2a2d;
-    color: #bdbdc2;
+    background: #000000;
+    border-top-color: #1f1f24;
+    color: #c6c6ce;
 }
 
 #nqc-panel.night .nqc-add-btn:hover {
-    background: #1f1f22;
+    background: #0d0d0f;
     color: #ffffff;
 }
 
 #nqc-panel.night .nqc-add-btn:active {
-    background: #26262a;
+    background: #1a1a1e;
 }
 
 /* 新增输入行 */
 #nqc-panel.night .nqc-add-row {
-    border-top-color: #2a2a2d;
+    border-top-color: #1f1f24;
 }
 
 #nqc-panel.night .nqc-input {
-    background: #1c1c1f;
-    border-color: #3a3a3f;
-    color: #f5f5f5;
+    background: #0d0d0f;
+    border-color: #2e2e33;
+    color: #ffffff;
 }
 
 #nqc-panel.night .nqc-input::placeholder {
-    color: #6f6f76;
+    color: #6e6e76;
 }
 
 #nqc-panel.night .nqc-input:focus {
-    border-color: #8a8a90;
+    border-color: #8e8e96;
 }
 
 #nqc-panel.night .nqc-row-btn {
-    background: #1c1c1f;
-    border-color: #3a3a3f;
-    color: #bdbdc2;
+    background: #0d0d0f;
+    border-color: #2e2e33;
+    color: #c6c6ce;
 }
 
 #nqc-panel.night .nqc-row-btn:hover {
-    background: #26262a;
+    background: #1a1a1e;
     color: #ffffff;
-    border-color: #55555b;
+    border-color: #55555c;
 }
 
+/* 确认按钮：反色强调（白底黑字） */
 #nqc-panel.night .nqc-row-btn.confirm {
-    background: #f5f5f5;
-    border-color: #f5f5f5;
-    color: #111;
+    background: #ffffff;
+    border-color: #ffffff;
+    color: #000000;
 }
 
 #nqc-panel.night .nqc-row-btn.confirm:hover {
-    background: #ffffff;
-    border-color: #ffffff;
+    background: #f2f2f2;
+    border-color: #f2f2f2;
 }
