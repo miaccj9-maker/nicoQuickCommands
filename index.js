@@ -109,8 +109,16 @@ function buildPanel() {
     addRow = panel.querySelector('#nqc-add-row');
     inputEl = panel.querySelector('#nqc-input');
 
-    // 遮罩点击关闭
+    // 遮罩点击关闭（桌面端兜底）
     mask.addEventListener('click', closePanel);
+
+    // 手机端修复：触摸点击遮罩/别处时，浏览器合成的 click 可能被全局 touch 处理吞掉，
+    // 改用 pointerdown（按下即触发，鼠标/触屏统一，无 300ms 延迟）——面板外一律关闭
+    document.addEventListener('pointerdown', (e) => {
+        if (!isOpen) return; // 未打开时零开销
+        if (e.target instanceof Element && e.target.closest('#nqc-panel')) return;
+        closePanel();
+    }, true);
 
     // 新增指令：展开输入行
     addBtn.addEventListener('click', () => {
