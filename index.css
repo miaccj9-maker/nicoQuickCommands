@@ -88,6 +88,34 @@
     letter-spacing: 0.5px;
 }
 
+/* 夜间模式切换按钮（极简矢量图标） */
+.nqc-night-btn {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e0e0e0;
+    border-radius: 0;
+    background: #ffffff;
+    color: #888;
+    font-size: 11px;
+    cursor: pointer;
+    padding: 0;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.nqc-night-btn:hover {
+    background: #f5f5f5;
+    color: #111;
+    border-color: #cccccc;
+}
+
+.nqc-night-btn:active {
+    background: #ebebeb;
+}
+
 /* 指令列表 */
 .nqc-list {
     flex: 1;
@@ -253,4 +281,131 @@
 .nqc-row-btn.confirm:hover {
     background: #333;
     border-color: #333;
+}
+
+/* ============================================================
+   夜间模式：灰色大背景（遮罩）+ 黑色子模块（面板）+ 白色文本
+   ============================================================ */
+
+/* 遮罩：灰色大背景 */
+#nqc-mask.night {
+    background: rgba(72, 72, 76, 0.6);
+}
+
+/* 面板：黑色子模块 */
+#nqc-panel.night {
+    background: #151517;
+    border-color: #2a2a2d;
+    box-shadow: -10px 10px 34px rgba(0, 0, 0, 0.5);
+}
+
+#nqc-panel.night #nqc-handle {
+    background: #3c3c41;
+}
+
+#nqc-panel.night .nqc-header {
+    border-bottom-color: #2a2a2d;
+}
+
+#nqc-panel.night .nqc-header-icon,
+#nqc-panel.night .nqc-header-title {
+    color: #f5f5f5;
+}
+
+#nqc-panel.night .nqc-header-count {
+    color: #8a8a90;
+}
+
+/* 夜间切换按钮（面板内反色） */
+#nqc-panel.night .nqc-night-btn {
+    background: #1c1c1f;
+    border-color: #3a3a3f;
+    color: #c8c8cd;
+}
+
+#nqc-panel.night .nqc-night-btn:hover {
+    background: #26262a;
+    color: #ffffff;
+    border-color: #55555b;
+}
+
+/* 指令项：黑色子模块 + 白色文本 */
+#nqc-panel.night .nqc-item {
+    background: #1c1c1f;
+    border-color: #2e2e33;
+}
+
+#nqc-panel.night .nqc-item:hover {
+    background: #26262a;
+}
+
+#nqc-panel.night .nqc-item-text {
+    color: #f0f0f0;
+}
+
+#nqc-panel.night .nqc-item-del {
+    color: #6f6f76;
+}
+
+#nqc-panel.night .nqc-item-del:hover {
+    color: #ffffff;
+    background: #333338;
+}
+
+/* 新增按钮 */
+#nqc-panel.night .nqc-add-btn {
+    background: #151517;
+    border-top-color: #2a2a2d;
+    color: #bdbdc2;
+}
+
+#nqc-panel.night .nqc-add-btn:hover {
+    background: #1f1f22;
+    color: #ffffff;
+}
+
+#nqc-panel.night .nqc-add-btn:active {
+    background: #26262a;
+}
+
+/* 新增输入行 */
+#nqc-panel.night .nqc-add-row {
+    border-top-color: #2a2a2d;
+}
+
+#nqc-panel.night .nqc-input {
+    background: #1c1c1f;
+    border-color: #3a3a3f;
+    color: #f5f5f5;
+}
+
+#nqc-panel.night .nqc-input::placeholder {
+    color: #6f6f76;
+}
+
+#nqc-panel.night .nqc-input:focus {
+    border-color: #8a8a90;
+}
+
+#nqc-panel.night .nqc-row-btn {
+    background: #1c1c1f;
+    border-color: #3a3a3f;
+    color: #bdbdc2;
+}
+
+#nqc-panel.night .nqc-row-btn:hover {
+    background: #26262a;
+    color: #ffffff;
+    border-color: #55555b;
+}
+
+#nqc-panel.night .nqc-row-btn.confirm {
+    background: #f5f5f5;
+    border-color: #f5f5f5;
+    color: #111;
+}
+
+#nqc-panel.night .nqc-row-btn.confirm:hover {
+    background: #ffffff;
+    border-color: #ffffff;
 }

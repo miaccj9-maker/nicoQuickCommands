@@ -12,7 +12,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.0.0';
+const MODULE_VERSION = '1.1.0';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -35,9 +35,11 @@ const OLD_DEFAULT_COMMANDS = [
 ];
 
 if (!extension_settings[MODULE_NAME]) {
-    extension_settings[MODULE_NAME] = { commands: DEFAULT_COMMANDS.slice() };
+    extension_settings[MODULE_NAME] = { commands: DEFAULT_COMMANDS.slice(), nightMode: false };
 }
 const settings = extension_settings[MODULE_NAME];
+// 兼容旧数据：缺 nightMode 字段时补默认（日间）
+if (typeof settings.nightMode !== 'boolean') settings.nightMode = false;
 // 旧版默认列表完整匹配时 → 替换为新默认（已自定义过的列表不受影响）
 if (Array.isArray(settings.commands) && settings.commands.length === OLD_DEFAULT_COMMANDS.length &&
     OLD_DEFAULT_COMMANDS.every((c, i) => settings.commands[i] === c)) {
@@ -91,6 +93,9 @@ function buildPanel() {
         '<i class="fa-solid fa-bolt nqc-header-icon"></i>' +
         '<span class="nqc-header-title">快捷指令</span>' +
         '<span class="nqc-header-count"></span>' +
+        '<button type="button" class="nqc-night-btn" id="nqc-night-btn" title="切换到夜间模式">' +
+        '<i class="fa-solid fa-moon"></i>' +
+        '</button>' +
         '</div>' +
         '<div class="nqc-list" id="nqc-list"></div>' +
         '<div class="nqc-add-row" id="nqc-add-row">' +
@@ -108,6 +113,22 @@ function buildPanel() {
     addBtn = panel.querySelector('#nqc-add-btn');
     addRow = panel.querySelector('#nqc-add-row');
     inputEl = panel.querySelector('#nqc-input');
+
+    // 夜间模式：灰色大背景 + 黑色子模块 + 白色文本（状态本地持久化）
+    const nightBtn = panel.querySelector('#nqc-night-btn');
+    const applyNight = (on) => {
+        panel.classList.toggle('night', on);
+        mask.classList.toggle('night', on);
+        nightBtn.innerHTML = on ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
+        nightBtn.title = on ? '切换到日间模式' : '切换到夜间模式';
+    };
+    applyNight(!!settings.nightMode);
+    nightBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        settings.nightMode = !panel.classList.contains('night');
+        saveSettingsDebounced();
+        applyNight(settings.nightMode);
+    });
 
     // 遮罩点击关闭（桌面端兜底）
     mask.addEventListener('click', closePanel);
