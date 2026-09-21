@@ -116,6 +116,45 @@
     background: #ebebeb;
 }
 
+/* 页签栏（第1页 / 第2页）：与「确认按钮」同风格的反色强调 */
+.nqc-tabs {
+    display: flex;
+    gap: 6px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #f0f0f0;
+    flex-shrink: 0;
+}
+
+.nqc-tab {
+    flex: 1;
+    height: 26px;
+    border: 1px solid #e0e0e0;
+    border-radius: 0;
+    background: #ffffff;
+    color: #888;
+    font-size: 11px;
+    letter-spacing: 2px;
+    cursor: pointer;
+    padding: 0;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.nqc-tab:hover {
+    background: #f5f5f5;
+    color: #111;
+    border-color: #cccccc;
+}
+
+.nqc-tab:active {
+    background: #ebebeb;
+}
+
+.nqc-tab.active {
+    background: #111111;
+    border-color: #111111;
+    color: #ffffff;
+}
+
 /* 指令列表 */
 .nqc-list {
     flex: 1;
@@ -316,6 +355,33 @@
 
 #nqc-panel.night .nqc-header-count {
     color: #8e8e96;
+}
+
+/* 页签栏（夜间镜像反色） */
+#nqc-panel.night .nqc-tabs {
+    border-bottom-color: #1f1f24;
+}
+
+#nqc-panel.night .nqc-tab {
+    background: #0d0d0f;
+    border-color: #2e2e33;
+    color: #c6c6ce;
+}
+
+#nqc-panel.night .nqc-tab:hover {
+    background: #1a1a1e;
+    color: #ffffff;
+    border-color: #55555c;
+}
+
+#nqc-panel.night .nqc-tab:active {
+    background: #26262b;
+}
+
+#nqc-panel.night .nqc-tab.active {
+    background: #ffffff;
+    border-color: #ffffff;
+    color: #000000;
 }
 
 /* 夜间切换按钮（面板内反色） */

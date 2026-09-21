@@ -5,6 +5,11 @@
  * 面板：黑白灰 ins 极简直角风格，固定于左侧，无水印
  * 点击指令项 → 注入酒馆输入框（#chat_input），支持新增/删除指令，本地持久化
  *
+ * v1.2.0 新增：
+ * - 双页指令面板：页签「第1页 / 第2页」自由切换，两页指令相互独立；
+ * - 第二页与第一页交互完全一致：同样支持新增/删除指令、回车确认、本地持久化；
+ * - 页签切换只重渲染当前页列表（DocumentFragment 批量插入），不重建面板、不卡顿。
+ *
  * 纯前端扩展，不修改 SillyTavern 核心代码；禁用或删除本扩展即可完全移除。
  */
 
@@ -12,7 +17,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.1.1';
+const MODULE_VERSION = '1.2.0';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -35,7 +40,7 @@ const OLD_DEFAULT_COMMANDS = [
 ];
 
 if (!extension_settings[MODULE_NAME]) {
-    extension_settings[MODULE_NAME] = { commands: DEFAULT_COMMANDS.slice(), nightMode: false };
+    extension_settings[MODULE_NAME] = { commands: DEFAULT_COMMANDS.slice(), commands2: [], nightMode: false };
 }
 const settings = extension_settings[MODULE_NAME];
 // 兼容旧数据：缺 nightMode 字段时补默认（日间）
@@ -49,6 +54,8 @@ if (Array.isArray(settings.commands) && settings.commands.length === OLD_DEFAULT
 if (!Array.isArray(settings.commands) || settings.commands.length === 0) {
     settings.commands = DEFAULT_COMMANDS.slice();
 }
+// 第二页指令列表（v1.2.0）：与第一页相互独立，默认空，支持增删，本地持久化
+if (!Array.isArray(settings.commands2)) settings.commands2 = [];
 
 // ========== 参数 ==========
 const EDGE_WIDTH = 40;      // 左边缘触发宽度（px）
@@ -64,6 +71,8 @@ let addBtn = null;
 let addRow = null;
 let inputEl = null;
 let isOpen = false;
+let activePage = 1; // 当前页：1=第一页 2=第二页
+let tabBtns = [];
 
 // 手势状态
 let startX = 0;
@@ -97,6 +106,10 @@ function buildPanel() {
         '<i class="fa-solid fa-moon"></i>' +
         '</button>' +
         '</div>' +
+        '<div class="nqc-tabs" id="nqc-tabs">' +
+        '<button type="button" class="nqc-tab active" data-pg="1">第1页</button>' +
+        '<button type="button" class="nqc-tab" data-pg="2">第2页</button>' +
+        '</div>' +
         '<div class="nqc-list" id="nqc-list"></div>' +
         '<div class="nqc-add-row" id="nqc-add-row">' +
         '<input type="text" class="nqc-input" id="nqc-input" placeholder="输入新指令…" maxlength="500">' +
@@ -113,6 +126,12 @@ function buildPanel() {
     addBtn = panel.querySelector('#nqc-add-btn');
     addRow = panel.querySelector('#nqc-add-row');
     inputEl = panel.querySelector('#nqc-input');
+
+    // 页签：切换第一页/第二页（两页指令相互独立，切换只重渲染列表）
+    tabBtns = Array.prototype.slice.call(panel.querySelectorAll('.nqc-tab'));
+    tabBtns.forEach((btn) => {
+        btn.addEventListener('click', () => switchPage(Number(btn.dataset.pg) || 1));
+    });
 
     // 夜间模式：灰色大背景 + 黑色子模块 + 白色文本（状态本地持久化）
     const nightBtn = panel.querySelector('#nqc-night-btn');
@@ -168,14 +187,34 @@ function buildPanel() {
     });
 }
 
+// ========== 分页 ==========
+
+function getCommands() {
+    return activePage === 2 ? settings.commands2 : settings.commands;
+}
+
+function switchPage(pg) {
+    if (pg === activePage) return; // 同页不重复渲染，零开销
+    activePage = pg;
+    cancelAdd();
+    renderList(); // 只重渲染列表（DocumentFragment），不重建面板
+}
+
+function updateTabs() {
+    tabBtns.forEach((btn) => {
+        btn.classList.toggle('active', (Number(btn.dataset.pg) || 1) === activePage);
+    });
+}
+
 function addCommand() {
     const text = inputEl.value.trim();
     if (!text) return;
-    if (settings.commands.includes(text)) {
+    const list = getCommands();
+    if (list.includes(text)) {
         inputEl.select();
         return; // 已存在，不重复添加
     }
-    settings.commands.push(text);
+    list.push(text);
     saveSettingsDebounced();
     renderList();
     cancelAdd();
@@ -193,8 +232,9 @@ function renderList() {
     if (!listEl) return;
     listEl.innerHTML = '';
 
+    const list = getCommands();
     const fragment = document.createDocumentFragment();
-    for (const cmd of settings.commands) {
+    for (const cmd of list) {
         const item = document.createElement('div');
         item.className = 'nqc-item';
 
@@ -210,9 +250,10 @@ function renderList() {
         delBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
         delBtn.addEventListener('click', (e) => {
             e.stopPropagation(); // 不触发注入
-            const idx = settings.commands.indexOf(cmd);
+            const list = getCommands();
+            const idx = list.indexOf(cmd);
             if (idx !== -1) {
-                settings.commands.splice(idx, 1);
+                list.splice(idx, 1);
                 saveSettingsDebounced();
                 renderList();
             }
@@ -229,19 +270,20 @@ function renderList() {
         fragment.appendChild(item);
     }
 
-    if (settings.commands.length === 0) {
+    if (list.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'nqc-item';
         empty.style.cssText = 'cursor:default; color:#b0b0b0; border-style:dashed;';
         const emptySpan = document.createElement('span');
         emptySpan.className = 'nqc-item-text';
-        emptySpan.textContent = '暂无指令，点击下方「新增指令」添加';
+        emptySpan.textContent = activePage === 2 ? '第2页暂无指令，点击下方「新增指令」添加' : '暂无指令，点击下方「新增指令」添加';
         empty.appendChild(emptySpan);
         fragment.appendChild(empty);
     }
 
     listEl.appendChild(fragment);
-    headerCountEl.textContent = `${settings.commands.length} 条`;
+    headerCountEl.textContent = `${list.length} 条 · 第${activePage}页`;
+    updateTabs();
 }
 
 // ========== 注入输入框 ==========
@@ -383,7 +425,7 @@ export async function init() {
         }
     });
 
-    console.log(`[${MODULE_NAME}] 初始化完成：从屏幕左边缘右滑/右拖唤出快捷指令面板`);
+    console.log(`[${MODULE_NAME}] 初始化完成：从屏幕左边缘右滑/右拖唤出快捷指令面板（第1页/第2页双页）`);
 }
 
 export async function loop() {
