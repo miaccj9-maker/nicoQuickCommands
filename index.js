@@ -32,7 +32,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.4.3';
+const MODULE_VERSION = '1.4.4';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -1291,6 +1291,15 @@ function buildPanel() {
 
     // 夜间模式：灰色大背景 + 黑色子模块 + 白色文本（状态本地持久化）
     const nightBtn = panel.querySelector('#nqc-night-btn');
+    // 主题常给 button 加底块/描边：清成纯图标，并固定在右上角
+    try {
+        nightBtn.style.setProperty('background', 'transparent', 'important');
+        nightBtn.style.setProperty('border', '0', 'important');
+        nightBtn.style.setProperty('box-shadow', 'none', 'important');
+        nightBtn.style.setProperty('padding', '0', 'important');
+        nightBtn.style.setProperty('top', '10px', 'important');
+        nightBtn.style.setProperty('right', '12px', 'important');
+    } catch (e) { /* 忽略 */ }
     const applyNight = (on) => {
         panel.classList.toggle('night', on);
         mask.classList.toggle('night', on);

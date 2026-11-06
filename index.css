@@ -113,39 +113,42 @@
     text-overflow: ellipsis;
 }
 
-/* 悬浮夜间圆钮（在灰色模块外侧右上） */
+/* 昼夜切换：只有图标，无底块（右上角贴边） */
 .nqc-night-btn {
     position: absolute;
-    top: 22px;
-    right: 14px;
+    top: 10px;
+    right: 12px;
     z-index: 3;
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     display: flex;
     align-items: center;
     justify-content: center;
     border: 0;
     border-radius: 50%;
-    background: rgba(118, 118, 128, 0.12);
-    color: #6e6e73;
+    background: transparent;
+    box-shadow: none;
+    color: #48484a;
     font-size: 12px;
     cursor: pointer;
     padding: 0;
-    transition: background 0.15s ease, color 0.15s ease;
+    opacity: 0.8;
+    transition: opacity 0.15s ease, color 0.15s ease;
 }
 
 .nqc-night-btn:hover {
-    background: rgba(118, 118, 128, 0.2);
+    background: transparent;
     color: #1c1c1e;
+    opacity: 1;
 }
 
 .nqc-night-btn:active {
-    background: rgba(118, 118, 128, 0.28);
+    opacity: 0.55;
 }
 
 .nqc-night-btn svg {
-    width: 14px;
-    height: 14px;
+    width: 15px;
+    height: 15px;
     display: block;
     fill: none;
     stroke: currentColor;
@@ -963,12 +966,12 @@
 }
 
 #nqc-panel.night .nqc-night-btn {
-    background: rgba(118, 118, 128, 0.26);
+    background: transparent;
     color: #c6c6ce;
 }
 
 #nqc-panel.night .nqc-night-btn:hover {
-    background: rgba(118, 118, 128, 0.38);
+    background: transparent;
     color: #ffffff;
 }
 
