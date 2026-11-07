@@ -2,7 +2,7 @@
  * nicoQuickCommands —— 酒馆快捷指令侧滑面板
  * ------------------------------------------------------------
  * 唤醒：从屏幕左边缘向右滑动 / 按住左边缘向右拖拽（鼠标、触屏均可）
- * 面板：iOS 风格极简侧栏（分段控件 / 分组卡片 / 细线分隔 / 毛玻璃），固定于左侧，无水印
+ * 面板：iOS 风格极简侧栏（分段控件 / 分组卡片 / 细线分隔 / 实色底），固定于左侧，无水印
  * 点击指令项 → 注入酒馆输入框，支持新增/删除指令，本地持久化
  *
  * v1.2.0 新增：
@@ -25,6 +25,13 @@
  * - 存档行改为 iMessage 会话气泡：头像 / 标题 / 当前标记 / 时间 / 条数 / 预览 / 备注 / 加载，
  *   备注、专属头像、加载、＋新聊天、刷新、筛选、数量懒加载、当前标记全部保留。
  *
+ * v1.5.0 更新：
+ * - 切换存档不再「先闪一下别的存档」：同角色直接 openCharacterChat；跨角色先补全角色、
+ *   把角色指针预置为目标存档再走原生 selectCharacterById，末态校验 chatId 是否真的落到目标；
+ * - 切换/删除加串行锁与行级加载反馈；切换期间忽略 CHAT_CHANGED / CHAT_LOADED 的中间态刷新；
+ * - 新增删除存档：当前存档不显示删除入口并在逻辑层拦截，二次确认弹窗 + 官方删除链路
+ *   （自动修正角色指针）+ 删除后回读核对，只清理这一条档案的备注与专属头像。
+ *
  * 纯前端扩展，不修改 SillyTavern 核心代码；禁用或删除本扩展即可完全移除。
  */
 
@@ -32,7 +39,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.4.4';
+const MODULE_VERSION = '1.5.0';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -140,13 +147,15 @@ var nqcArchive = (function(){
         return null;
     }
     // setActiveGroup / saveChatDebounced 未挂在 getContext() 上：动态 import 一次（ESM 缓存，不会重复执行酒馆主模块）
-    var arcMod = { setActiveGroup:null, saveChatDebounced:null, doNewChat:null };
+    var arcMod = { setActiveGroup:null, saveChatDebounced:null, doNewChat:null, createOrEditCharacter:null, deleteCharacterChatByName:null };
     var arcModReady = Promise.resolve();
     try{
         arcModReady = import('../../../../script.js').then(function(m){
             if(m && typeof m.setActiveGroup==='function') arcMod.setActiveGroup = m.setActiveGroup;
             if(m && typeof m.saveChatDebounced==='function') arcMod.saveChatDebounced = m.saveChatDebounced;
             if(m && typeof m.doNewChat==='function') arcMod.doNewChat = m.doNewChat;
+            if(m && typeof m.createOrEditCharacter==='function') arcMod.createOrEditCharacter = m.createOrEditCharacter;
+            if(m && typeof m.deleteCharacterChatByName==='function') arcMod.deleteCharacterChatByName = m.deleteCharacterChatByName;
         }).catch(function(e){ console.warn('['+MODULE_NAME+'] script.js 桥接失败，群聊退出/即时保存将走兜底', e); });
     }catch(e){ console.warn('['+MODULE_NAME+'] 动态 import 不可用', e); }
 
@@ -197,6 +206,12 @@ var nqcArchive = (function(){
     var renderChain = Promise.resolve();
     var lastSignature = null;
 
+    // 切换存档串行锁：切换期间忽略重复点击，并压掉中间态的「当前」标记 / 头像刷新
+    var switching = false;
+    var deleting = false;
+    var confirmEl = null;
+    var confirmClose = null;
+
     var boundEvents = [];
     var timers = [];
     var chatObserver = null, chatObserverTarget = null;
@@ -208,6 +223,7 @@ var nqcArchive = (function(){
     var SVG_CHEVRON = '<svg viewBox="0 0 24 24"><path d="M9.29 6.71L14.58 12l-5.29 5.29L10.71 18.7l6.59-6.59a1 1 0 0 0 0-1.41l-6.59-6.59z"/></svg>';
     var SVG_IMAGE = '<svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.9 13.05l2.1 2.53 3.1-3.88L19 17H5l3.9-3.95z"/></svg>';
     var SVG_ERASER = '<svg viewBox="0 0 24 24"><path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73a2 2 0 0 0 0 2.83l3.85 3.85c.39.39.9.59 1.41.59H22v-2H7.83l-3-3L13.44 5.7l5.06 5.1 1.42-1.41a2 2 0 0 0 0-2.84l-3.36-3.36A1.98 1.98 0 0 0 15.14 3z"/></svg>';
+    var SVG_TRASH = '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5.5h6V7M6.5 7l.8 12.2a1 1 0 0 0 1 .8h7.4a1 1 0 0 0 1-.8L17.5 7M10 11v5M14 11v5"/></svg>';
 
     /* ---------- 工具函数 ---------- */
     function noteKey(avatar, fileName){ return avatar + '::' + fileName; }
@@ -908,7 +924,10 @@ var nqcArchive = (function(){
         var row = document.createElement('div');
         row.className = 'nqc-msg';
         row.dataset.file = chat.file_name;
-        if(currentChat && stripJsonl(chat.file_name) === currentChat) row.classList.add('nqc-cur');
+        row.dataset.avatar = avatar;
+        var ctxForCur = getContext();
+        var curCharForRow = ctxForCur && ctxForCur.characters ? ctxForCur.characters[ctxForCur.characterId] : null;
+        if(currentChat && curCharForRow && curCharForRow.avatar === avatar && stripJsonl(chat.file_name) === currentChat) row.classList.add('nqc-cur');
 
         row.appendChild(buildChatAvatar(chat, avatar));
 
@@ -972,14 +991,43 @@ var nqcArchive = (function(){
         loadBtn.className = 'nqc-msg-load';
         loadBtn.textContent = '加载';
         loadBtn.title = '切换到该角色并打开这个存档';
-        loadBtn.addEventListener('click', function(){ loadChat(avatar, chat.file_name); });
-        row.appendChild(loadBtn);
+        loadBtn.addEventListener('click', function(){ loadChat(avatar, chat.file_name, row, loadBtn); });
+
+        var delBtn = document.createElement('button');
+        delBtn.type = 'button';
+        delBtn.className = 'nqc-msg-del';
+        delBtn.title = '删除这个存档（不可恢复）';
+        delBtn.setAttribute('aria-label', '删除存档 ' + (chat.file_name || ''));
+        delBtn.innerHTML = SVG_TRASH;
+        delBtn.addEventListener('click', function(){ deleteChat(avatar, chat, row, delBtn); });
+
+        var actions = document.createElement('div');
+        actions.className = 'nqc-msg-actions';
+        actions.appendChild(loadBtn);
+        actions.appendChild(delBtn);
+        row.appendChild(actions);
 
         return row;
     }
 
     /* ---------- 加载指定角色的指定存档（与酒馆原生聊天列表点击行为一致） ---------- */
-    async function loadChat(avatar, fileName){
+    function syncSelectedChatPole(fileName){
+        try{
+            var el = document.getElementById('selected_chat_pole');
+            if(el) el.value = fileName;
+        }catch(e){}
+    }
+    function markRowLoading(row, loadBtn, on){
+        if(row) row.classList.toggle('nqc-loading', !!on);
+        if(loadBtn){
+            loadBtn.disabled = !!on;
+            loadBtn.textContent = on ? '…' : '加载';
+        }
+    }
+    async function loadChat(avatar, fileName, row, loadBtn){
+        // 串行切换：上一次没落定前忽略新点击，避免 A/B 两次加载互相打断，最终停在错误存档
+        if(switching || deleting){ nqcToast('正在处理，请稍候'); return; }
+
         var c = getContext();
         var chars = (c && c.characters) || [];
         var idx = -1;
@@ -989,19 +1037,255 @@ var nqcArchive = (function(){
             nqcToast('找不到该角色');
             return;
         }
+
+        var chatBase = stripJsonl(fileName);
+        // 已经是当前存档：不再清空重载，避免一次无意义的整屏闪烁
+        try{
+            if(String(c.characterId) === String(idx) && !c.groupId && stripJsonl(c.chatId || '') === chatBase){
+                nqcToast('已经是当前存档');
+                return;
+            }
+        }catch(e){}
+
+        switching = true;
+        var prevChatFile = chars[idx] ? chars[idx].chat : undefined;
+        markRowLoading(row, loadBtn, true);
+
         try{
             await arcModReady.catch(function(){});
-            var chatBase = stripJsonl(fileName); // 服务端会自动补 .jsonl，传带后缀的会拼成 .jsonl.jsonl
+            var ctxNow = getContext();
+            var charsNow = (ctxNow && ctxNow.characters) || [];
+            if(!ctxNow || !charsNow[idx]){ throw new Error('角色不可用'); }
             if(arcMod.setActiveGroup){ try{ arcMod.setActiveGroup(null); }catch(e){} } // 退出群聊模式
-            await c.selectCharacterById(idx);
-            await c.openCharacterChat(chatBase);
-            setTimeout(function(){ applyAvatarForCurrentChat(); }, 100);
+
+            var sameChar = String(ctxNow.characterId) === String(idx);
+            var inGroup = !!ctxNow.groupId;
+
+            if(sameChar && !inGroup){
+                // 同一角色：openCharacterChat 内部先 clearChat 再 load，屏幕上是「旧→目标」，不会出现别人的存档
+                await ctxNow.openCharacterChat(chatBase);
+            }else{
+                // 跨角色：先把角色补全并让指针指向目标存档，再走原生 selectCharacterById，
+                // 否则它会先载入该角色上一次的聊天（就是那一闪而过的「别的存档」）
+                try{
+                    if(typeof ctxNow.unshallowCharacter === 'function') await ctxNow.unshallowCharacter(idx);
+                }catch(e){}
+                try{
+                    var freshChar = (getContext() && getContext().characters[idx]) || charsNow[idx];
+                    freshChar.chat = chatBase;
+                }catch(e){}
+                await ctxNow.selectCharacterById(idx);
+                // 保存进行中时 selectCharacterById 会直接返回，这里兜底用官方 openCharacterChat
+                if(stripJsonl((getContext() && getContext().chatId) || '') !== chatBase){
+                    await ctxNow.openCharacterChat(chatBase);
+                }else{
+                    syncSelectedChatPole(chatBase);
+                    // 与 openCharacterChat 收尾保持一致（角色面板的 newChat 状态）
+                    if(typeof arcMod.createOrEditCharacter === 'function'){
+                        try{ await arcMod.createOrEditCharacter(new CustomEvent('newChat')); }catch(e){}
+                    }
+                }
+            }
+
+            // 最终校验：必须真的停在目标存档上，否则不报成功、不覆盖「当前」标记
+            var finalC = getContext();
+            if(stripJsonl((finalC && finalC.chatId) || '') !== chatBase){
+                try{ if(prevChatFile !== undefined) charsNow[idx].chat = prevChatFile; }catch(e){}
+                throw new Error('存档未真正切换');
+            }
+            try{ syncSelectedChatPole(chatBase); }catch(e){}
+            updateCurrentBadges();
+            applyAvatarForCurrentChat();
             nqcToast('已加载存档');
         }catch(e){
             console.error('['+MODULE_NAME+'] 加载存档失败:', e);
+            // 失败且没有停在目标档时，把角色指针还原，避免后续保存写到错误文件
+            try{
+                var cc = getContext();
+                if(cc && stripJsonl(cc.chatId || '') !== chatBase && charsNow && charsNow[idx] && prevChatFile !== undefined){
+                    charsNow[idx].chat = prevChatFile;
+                }
+            }catch(e3){}
             nqcToast('加载存档失败');
+            // 失败时不留下错误的「当前」标记
+            try{ updateCurrentBadges(); }catch(e2){}
+        }finally{
+            switching = false;
+            markRowLoading(row, loadBtn, false);
         }
     }
+
+    /* ---------- 删除存档（二次确认 + 服务端核对，避免删错） ---------- */
+    function archiveTitleOf(chat){
+        var base = stripJsonl(chat.file_name);
+        return formatTimestampName(base) || base || String(chat.file_name || '');
+    }
+    function askDeleteConfirm(avatar, chat){
+        return new Promise(function(resolve){
+            if(confirmEl){ resolve(false); return; }
+            var host = document.getElementById('nqc-panel') || panelEl || document.body;
+            var modal = document.createElement('div');
+            modal.className = 'nqc-modal';
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-modal', 'true');
+
+            var card = document.createElement('div');
+            card.className = 'nqc-modal-card';
+
+            var title = document.createElement('div');
+            title.className = 'nqc-modal-title';
+            title.textContent = '删除这个存档？';
+
+            var target = document.createElement('div');
+            target.className = 'nqc-modal-target';
+            target.textContent = charNameOf(avatar) + ' · ' + archiveTitleOf(chat);
+
+            var meta = document.createElement('div');
+            meta.className = 'nqc-modal-meta';
+            var msgs = Number.isFinite(Number(chat.chat_items)) ? Number(chat.chat_items) : 0;
+            meta.textContent = msgs + ' 条消息 · ' + (chat.file_size || '大小未知');
+
+            var file = document.createElement('div');
+            file.className = 'nqc-modal-file';
+            file.textContent = String(chat.file_name || '');
+
+            var warn = document.createElement('div');
+            warn.className = 'nqc-modal-warn';
+            warn.textContent = '删除后无法恢复，其他存档不会受影响。';
+
+            var actions = document.createElement('div');
+            actions.className = 'nqc-modal-actions';
+            var cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'nqc-modal-btn cancel';
+            cancel.textContent = '取消';
+            var ok = document.createElement('button');
+            ok.type = 'button';
+            ok.className = 'nqc-modal-btn danger';
+            ok.textContent = '删除';
+            actions.appendChild(cancel);
+            actions.appendChild(ok);
+
+            card.appendChild(title);
+            card.appendChild(target);
+            card.appendChild(meta);
+            card.appendChild(file);
+            card.appendChild(warn);
+            card.appendChild(actions);
+            modal.appendChild(card);
+            host.appendChild(modal);
+            confirmEl = modal;
+
+            var prevFocus = document.activeElement;
+            function close(result){
+                if(!modal.parentNode) return;
+                try{ modal.parentNode.removeChild(modal); }catch(e){}
+                document.removeEventListener('keydown', onKey, true);
+                confirmEl = null;
+                confirmClose = null;
+                try{ if(prevFocus && prevFocus.focus) prevFocus.focus(); }catch(e){}
+                resolve(!!result);
+            }
+            confirmClose = close;
+            function onKey(e){
+                if(e.key === 'Escape'){ e.preventDefault(); close(false); }
+            }
+            cancel.addEventListener('click', function(){ close(false); });
+            ok.addEventListener('click', function(){ close(true); });
+            modal.addEventListener('click', function(e){ if(e.target === modal) close(false); });
+            document.addEventListener('keydown', onKey, true);
+            try{ cancel.focus(); }catch(e){}
+        });
+    }
+
+    function removeRowAndSync(avatar, chat, row){
+        var left = counts[avatar] || 0;
+        try{ if(row && row.parentNode) row.parentNode.removeChild(row); }catch(e){}
+
+        if(activeAvatar === avatar){
+            if(selSubEl) selSubEl.textContent = left + ' 个存档';
+            var leftRows = listEl ? listEl.querySelectorAll('.nqc-msg').length : 0;
+            if(left === 0 || leftRows === 0){
+                if(listEl){
+                    listEl.innerHTML = '';
+                    delete listEl.dataset.cacheVer;
+                }
+                if(left > 0){
+                    // 列表比真实数量旧（少见）：按刚核对过的缓存重建，避免留下空白
+                    try{ renderChatList(avatar); }catch(e){}
+                }
+                var railItem = railEl ? railEl.querySelector('.nqc-rail[data-avatar="'+CSS.escape(avatar)+'"]') : null;
+                if(left === 0 && railItem) railItem.parentNode && railItem.parentNode.removeChild(railItem);
+                if(left === 0){
+                    activeAvatar = null;
+                    try{ updateRailActive(); }catch(e){}
+                    try{ syncPanel(); }catch(e){}
+                }
+            }
+        }
+        try{ updateCharBadge(avatar, left); }catch(e){}
+        try{ updateStats(); }catch(e){}
+        try{ applyFilter(); }catch(e){}
+    }
+
+    async function deleteChat(avatar, chat, row, delBtn){
+        if(switching || deleting){ nqcToast('正在处理，请稍候'); return; }
+        if(isCurrentChat(avatar, chat.file_name)){
+            nqcToast('当前正在使用这个存档，请先切换到其他存档再删除');
+            return;
+        }
+        if(delBtn && delBtn.dataset.busy === '1') return;
+        var fileName = String(chat.file_name || '');
+        var confirmed = await askDeleteConfirm(avatar, chat);
+        if(!confirmed) return;
+
+        deleting = true;
+        if(delBtn){ delBtn.dataset.busy = '1'; delBtn.disabled = true; }
+        if(row) row.classList.add('nqc-deleting');
+        try{
+            var c = getContext();
+            if(!c || typeof c.getRequestHeaders !== 'function') throw new Error('酒馆接口不可用');
+            var chatfile = /\.jsonl$/i.test(fileName) ? fileName : (fileName + '.jsonl');
+            await arcModReady.catch(function(){});
+            var ci = findCharIndex(avatar);
+            if(ci >= 0 && typeof arcMod.deleteCharacterChatByName === 'function'){
+                // 官方删除链路：文件删除后若正是该角色「上次使用」的存档，会自动把角色指针改到剩余的最新存档
+                await arcMod.deleteCharacterChatByName(ci, stripJsonl(fileName));
+            }else{
+                var res = await fetchWithTimeout('/api/chats/delete', {
+                    method:'POST',
+                    headers:c.getRequestHeaders(),
+                    body:JSON.stringify({ chatfile: chatfile, avatar_url: avatar })
+                });
+                if(!res || !res.ok) throw new Error('HTTP ' + (res ? res.status : '?'));
+            }
+            // 删除后立刻回读该角色的存档列表，确认目标确实不在了再动 UI
+            var fresh = await fetchCharacterChats(avatar);
+            if(fresh === null) throw new Error('无法核对删除结果');
+            var still = fresh.some(function(x){ return stripJsonl(x && x.file_name) === stripJsonl(fileName); });
+            if(still) throw new Error('服务端未删除该存档');
+
+            chatsCache[avatar] = sortChats(fresh);
+            counts[avatar] = fresh.length;
+            countsLoaded = true;
+            // 只清理这条存档自己的备注 / 专属头像，绝不按角色整体清空
+            delete notes[noteKey(avatar, fileName)];
+            delete avatars[noteKey(avatar, fileName)];
+            ensureSettings();
+            saveSettings();
+
+            removeRowAndSync(avatar, chat, row);
+            nqcToast('已删除「' + archiveTitleOf(chat) + '」');
+        }catch(e){
+            console.warn('['+MODULE_NAME+'] 删除存档失败:', e);
+            nqcToast('删除失败，请重试');
+        }finally{
+            deleting = false;
+            if(delBtn){ delBtn.dataset.busy = '0'; delBtn.disabled = false; }
+            if(row) row.classList.remove('nqc-deleting');
+        }
+    }
+
 
     /* ---------- 列表渲染（串行化，签名去重，避免并发重建互相打断） ---------- */
     function renderCharFolders(force){
@@ -1070,10 +1354,12 @@ var nqcArchive = (function(){
         if(!arcPage) return;
         var c = getContext();
         var current = c && c.chatId;
+        var curChar = c && c.characters ? c.characters[c.characterId] : null;
+        var curAvatar = curChar ? curChar.avatar : null;
         var rows = arcPage.querySelectorAll('.nqc-msg');
         for(var i=0;i<rows.length;i++){
             var row = rows[i];
-            var isCur = current && stripJsonl(row.dataset.file) === current;
+            var isCur = !!current && row.dataset.avatar === curAvatar && stripJsonl(row.dataset.file) === current;
             row.classList.toggle('nqc-cur', !!isCur);
             var badge = row.querySelector('.nqc-msg-badge');
             if(isCur && !badge){
@@ -1151,6 +1437,9 @@ var nqcArchive = (function(){
             renderCharFolders();
         }
     }
+    function dismissConfirm(){
+        try{ if(confirmClose) confirmClose(false); }catch(e){}
+    }
     function destroy(){
         var c = getContext();
         if(c && c.eventSource){
@@ -1168,6 +1457,7 @@ var nqcArchive = (function(){
         try{ __avatarPending = []; __avatarNodeScheduled = false; }catch(e){}
         try{ if(avatarFileInput && avatarFileInput.parentNode) avatarFileInput.parentNode.removeChild(avatarFileInput); }catch(e){}
         avatarFileInput = null;
+        dismissConfirm();
     }
     var initRetries = 0;
     function init(){
@@ -1189,10 +1479,11 @@ var nqcArchive = (function(){
             if(activeAvatar && !avatarSet.has(activeAvatar)){ activeAvatar = null; try{ syncPanel(); }catch(e){} }
             if(countsStarted){ countsLoaded = true; loadCounts(); }
         });
-        onEvent('CHAT_CHANGED', function(){ ensureChatObserver(); updateCurrentBadges(); applyAvatarForCurrentChat(); });
+        // 切换进行中不跟随中间态刷新（否则会先闪一下别的存档的「当前」标记 / 专属头像）
+        onEvent('CHAT_CHANGED', function(){ ensureChatObserver(); if(switching) return; updateCurrentBadges(); applyAvatarForCurrentChat(); });
         onEvent('CHARACTER_MESSAGE_RENDERED', onMessageRendered);
         onEvent('MESSAGE_UPDATED', onMessageRendered);
-        onEvent('CHAT_LOADED', function(){ ensureChatObserver(); applyAvatarForCurrentChat(); });
+        onEvent('CHAT_LOADED', function(){ ensureChatObserver(); if(switching) return; applyAvatarForCurrentChat(); });
 
         applyAvatarForCurrentChat();
         // 酒馆自动恢复上次聊天可能早于本模块激活，延迟补几次（一次性、非轮询）
@@ -1202,7 +1493,7 @@ var nqcArchive = (function(){
         try{ console.log('[nqc-arc] 聊天存档管理器已并入快捷指令面板 v'+MODULE_VERSION); }catch(e){}
     }
 
-    var mod = { init:init, destroy:destroy, onPanelOpen:onPanelOpen };
+    var mod = { init:init, destroy:destroy, onPanelOpen:onPanelOpen, dismissConfirm:dismissConfirm };
     return mod;
 })();
 
@@ -1604,6 +1895,7 @@ function closePanel() {
     panel.classList.remove('is-open');
     mask.classList.remove('is-open');
     cancelAdd();
+    try { if (nqcArchive && typeof nqcArchive.dismissConfirm === 'function') nqcArchive.dismissConfirm(); } catch (e) {}
 }
 
 // ========== 手势唤醒（passive + rAF 节流，不阻塞滚动） ==========

@@ -895,6 +895,173 @@
     background: rgba(0, 122, 255, 0.26);
 }
 
+/* 每行的操作列：加载 + 删除（小图标，需二次确认） */
+.nqc-msg-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    align-self: center;
+    flex-shrink: 0;
+}
+
+.nqc-msg-del {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #8e8e93;
+    padding: 0;
+    cursor: pointer;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.nqc-msg-del svg {
+    width: 14px;
+    height: 14px;
+    display: block;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* 当前存档不可删除：隐藏入口但保留占位，行高保持一致 */
+.nqc-msg.nqc-cur .nqc-msg-del {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.nqc-msg-del:hover {
+    color: #ff3b30;
+    background: rgba(255, 59, 48, 0.1);
+}
+
+.nqc-msg-del:active {
+    background: rgba(255, 59, 48, 0.18);
+}
+
+.nqc-msg.nqc-deleting {
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+.nqc-msg.nqc-loading {
+    background: rgba(0, 122, 255, 0.1);
+}
+
+/* 删除确认：面板内模态，实色卡片、无毛玻璃 */
+.nqc-modal {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(0, 0, 0, 0.32);
+    animation: nqc-modal-in 0.15s ease;
+}
+
+@keyframes nqc-modal-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.nqc-modal-card {
+    width: 100%;
+    max-width: 290px;
+    background: #ffffff;
+    border-radius: 18px;
+    padding: 18px 16px 14px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.18);
+    text-align: center;
+}
+
+.nqc-modal-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #1c1c1e;
+    letter-spacing: 0.2px;
+    margin-bottom: 10px;
+}
+
+.nqc-modal-target {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #1c1c1e;
+    line-height: 1.4;
+    margin-bottom: 4px;
+    word-break: break-word;
+}
+
+.nqc-modal-meta {
+    font-size: 11.5px;
+    color: #8e8e93;
+    margin-bottom: 2px;
+}
+
+.nqc-modal-file {
+    font-size: 10.5px;
+    color: #8e8e93;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 10px;
+}
+
+.nqc-modal-warn {
+    font-size: 11.5px;
+    color: #ff3b30;
+    line-height: 1.45;
+    margin-bottom: 14px;
+}
+
+.nqc-modal-actions {
+    display: flex;
+    gap: 9px;
+}
+
+.nqc-modal-btn {
+    flex: 1;
+    height: 36px;
+    border: 0;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.nqc-modal-btn.cancel {
+    background: #efeff4;
+    color: #1c1c1e;
+}
+
+.nqc-modal-btn.cancel:hover {
+    background: #e5e5ea;
+}
+
+.nqc-modal-btn.danger {
+    background: #ff3b30;
+    color: #ffffff;
+}
+
+.nqc-modal-btn.danger:hover {
+    background: #ff2d20;
+}
+
+.nqc-modal-btn:active {
+    opacity: 0.82;
+}
+
 /* 轻提示（存档加载 / 新聊天） */
 .nqc-toast {
     position: fixed;
@@ -1211,4 +1378,54 @@
 #nqc-panel.night .nqc-toast {
     background: rgba(245, 245, 247, 0.94);
     color: #1c1c1e;
+}
+
+#nqc-panel.night .nqc-msg-del {
+    color: #8e8e93;
+}
+
+#nqc-panel.night .nqc-msg-del:hover {
+    color: #ff453a;
+    background: rgba(255, 69, 58, 0.14);
+}
+
+#nqc-panel.night .nqc-msg.nqc-loading {
+    background: rgba(10, 132, 255, 0.18);
+}
+
+#nqc-panel.night .nqc-modal {
+    background: rgba(0, 0, 0, 0.55);
+}
+
+#nqc-panel.night .nqc-modal-card {
+    background: #2c2c2e;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+}
+
+#nqc-panel.night .nqc-modal-title,
+#nqc-panel.night .nqc-modal-target {
+    color: #ffffff;
+}
+
+#nqc-panel.night .nqc-modal-meta,
+#nqc-panel.night .nqc-modal-file {
+    color: #8e8e96;
+}
+
+#nqc-panel.night .nqc-modal-warn {
+    color: #ff453a;
+}
+
+#nqc-panel.night .nqc-modal-btn.cancel {
+    background: #3a3a3c;
+    color: #ffffff;
+}
+
+#nqc-panel.night .nqc-modal-btn.cancel:hover {
+    background: #48484a;
+}
+
+#nqc-panel.night .nqc-modal-btn.danger {
+    background: #ff453a;
+    color: #ffffff;
 }
