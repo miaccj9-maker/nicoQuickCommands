@@ -931,10 +931,9 @@
     stroke-linejoin: round;
 }
 
-/* 当前存档不可删除：隐藏入口但保留占位，行高保持一致 */
+/* 当前存档同样可以删除：删除后自动切到剩余最新存档 / 新建聊天 */
 .nqc-msg.nqc-cur .nqc-msg-del {
-    visibility: hidden;
-    pointer-events: none;
+    color: #6f6f76;
 }
 
 .nqc-msg-del:hover {
@@ -1110,13 +1109,13 @@
    夜间模式：实色深底 → 深色分组卡片 → 白色文字
    ============================================================ */
 #nqc-mask.night {
-    background: rgba(44, 44, 48, 0.62);
+    background: rgba(0, 0, 0, 0.66);
 }
 
 #nqc-panel.night {
-    background: #17171a;
-    border-color: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), 0 2px 8px rgba(0, 0, 0, 0.4);
+    background: #0b0b0d;
+    border-color: rgba(255, 255, 255, 0.07);
+    box-shadow: 0 28px 72px rgba(0, 0, 0, 0.72), 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 
 #nqc-panel.night #nqc-handle {
@@ -1143,11 +1142,11 @@
 }
 
 #nqc-panel.night .nqc-tabs {
-    background: rgba(118, 118, 128, 0.22);
+    background: #1a1a1d;
 }
 
 #nqc-panel.night .nqc-tab {
-    color: #c6c6ce;
+    color: #a8a8b0;
 }
 
 #nqc-panel.night .nqc-tab:hover {
@@ -1156,21 +1155,21 @@
 
 #nqc-panel.night .nqc-tab.active {
     background: #ffffff;
-    color: #1c1c1e;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+    color: #101012;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
 }
 
 #nqc-panel.night .nqc-item {
-    background: rgba(28, 28, 30, 0.78);
-    border-color: rgba(255, 255, 255, 0.06);
+    background: #17171a;
+    border-color: rgba(255, 255, 255, 0.05);
 }
 
 #nqc-panel.night .nqc-item:hover {
-    background: #26262b;
+    background: #1f1f23;
 }
 
 #nqc-panel.night .nqc-item:active {
-    background: #303036;
+    background: #26262b;
 }
 
 #nqc-panel.night .nqc-item-text {
@@ -1187,38 +1186,38 @@
 }
 
 #nqc-panel.night .nqc-add-btn {
-    background: rgba(118, 118, 128, 0.24);
+    background: #1a1a1d;
     color: #ffffff;
 }
 
 #nqc-panel.night .nqc-add-btn:hover {
-    background: rgba(118, 118, 128, 0.34);
+    background: #222226;
 }
 
 #nqc-panel.night .nqc-add-btn:active {
-    background: rgba(118, 118, 128, 0.42);
+    background: #2a2a2f;
 }
 
 #nqc-panel.night .nqc-input {
-    background: rgba(118, 118, 128, 0.22);
+    background: #1a1a1d;
     color: #ffffff;
 }
 
 #nqc-panel.night .nqc-input::placeholder {
-    color: #6e6e76;
+    color: #63636b;
 }
 
 #nqc-panel.night .nqc-input:focus {
-    box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.3);
+    box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.24);
 }
 
 #nqc-panel.night .nqc-row-btn {
-    background: rgba(118, 118, 128, 0.22);
-    color: #c6c6ce;
+    background: #1a1a1d;
+    color: #a8a8b0;
 }
 
 #nqc-panel.night .nqc-row-btn:hover {
-    background: rgba(118, 118, 128, 0.34);
+    background: #242429;
     color: #ffffff;
 }
 
@@ -1254,11 +1253,11 @@
 }
 
 #nqc-panel.night .nqc-arc-search {
-    background: rgba(118, 118, 128, 0.22);
+    background: #1a1a1d;
 }
 
 #nqc-panel.night .nqc-arc-search svg {
-    fill: #8e8e96;
+    fill: #7c7c84;
 }
 
 #nqc-panel.night .nqc-arc-search input {
@@ -1266,11 +1265,11 @@
 }
 
 #nqc-panel.night .nqc-arc-search input::placeholder {
-    color: #6e6e76;
+    color: #63636b;
 }
 
 #nqc-panel.night .nqc-rail-img {
-    background: rgba(118, 118, 128, 0.24);
+    background: #1a1a1d;
 }
 
 #nqc-panel.night .nqc-rail-nm {
@@ -1310,15 +1309,15 @@
 }
 
 #nqc-panel.night .nqc-msg {
-    background: rgba(255, 255, 255, 0.07);
+    background: #17171a;
 }
 
 #nqc-panel.night .nqc-msg:hover {
-    background: rgba(255, 255, 255, 0.11);
+    background: #202024;
 }
 
 #nqc-panel.night .nqc-msg.nqc-cur {
-    background: rgba(10, 132, 255, 0.16);
+    background: rgba(10, 132, 255, 0.19);
 }
 
 #nqc-panel.night .nqc-msg-title {
@@ -1361,9 +1360,9 @@
 }
 
 #nqc-panel.night .nqc-msg-avx {
-    background: #2c2c2e;
+    background: #2a2a2e;
     color: #ff453a;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
 }
 
 #nqc-panel.night .nqc-msg-cam {
@@ -1398,8 +1397,8 @@
 }
 
 #nqc-panel.night .nqc-modal-card {
-    background: #2c2c2e;
-    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
+    background: #1c1c1f;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.75);
 }
 
 #nqc-panel.night .nqc-modal-title,

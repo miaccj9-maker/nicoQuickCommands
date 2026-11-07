@@ -29,8 +29,10 @@
  * - 切换存档不再「先闪一下别的存档」：同角色直接 openCharacterChat；跨角色先补全角色、
  *   把角色指针预置为目标存档再走原生 selectCharacterById，末态校验 chatId 是否真的落到目标；
  * - 切换/删除加串行锁与行级加载反馈；切换期间忽略 CHAT_CHANGED / CHAT_LOADED 的中间态刷新；
- * - 新增删除存档：当前存档不显示删除入口并在逻辑层拦截，二次确认弹窗 + 官方删除链路
- *   （自动修正角色指针）+ 删除后回读核对，只清理这一条档案的备注与专属头像。
+ * - 新增删除存档：二次确认弹窗 + 官方删除链路（自动修正角色指针）+ 删除后回读核对，
+ *   只清理这一条档案的备注与专属头像；当前存档同样可删，删除后自动切到剩余最新存档/新建聊天。
+ *
+ * v1.5.1 更新：当前存档也显示删除入口（删除前明确提示会自动切换），夜间模式改为更深的层次黑。
  *
  * 纯前端扩展，不修改 SillyTavern 核心代码；禁用或删除本扩展即可完全移除。
  */
@@ -39,7 +41,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.5.0';
+const MODULE_VERSION = '1.5.1';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -147,7 +149,7 @@ var nqcArchive = (function(){
         return null;
     }
     // setActiveGroup / saveChatDebounced 未挂在 getContext() 上：动态 import 一次（ESM 缓存，不会重复执行酒馆主模块）
-    var arcMod = { setActiveGroup:null, saveChatDebounced:null, doNewChat:null, createOrEditCharacter:null, deleteCharacterChatByName:null };
+    var arcMod = { setActiveGroup:null, saveChatDebounced:null, doNewChat:null, createOrEditCharacter:null, deleteCharacterChatByName:null, replaceCurrentChat:null };
     var arcModReady = Promise.resolve();
     try{
         arcModReady = import('../../../../script.js').then(function(m){
@@ -156,6 +158,7 @@ var nqcArchive = (function(){
             if(m && typeof m.doNewChat==='function') arcMod.doNewChat = m.doNewChat;
             if(m && typeof m.createOrEditCharacter==='function') arcMod.createOrEditCharacter = m.createOrEditCharacter;
             if(m && typeof m.deleteCharacterChatByName==='function') arcMod.deleteCharacterChatByName = m.deleteCharacterChatByName;
+            if(m && typeof m.replaceCurrentChat==='function') arcMod.replaceCurrentChat = m.replaceCurrentChat;
         }).catch(function(e){ console.warn('['+MODULE_NAME+'] script.js 桥接失败，群聊退出/即时保存将走兜底', e); });
     }catch(e){ console.warn('['+MODULE_NAME+'] 动态 import 不可用', e); }
 
@@ -1151,7 +1154,9 @@ var nqcArchive = (function(){
 
             var warn = document.createElement('div');
             warn.className = 'nqc-modal-warn';
-            warn.textContent = '删除后无法恢复，其他存档不会受影响。';
+            warn.textContent = isCurrentChat(avatar, chat.file_name)
+                ? '这是当前正在使用的存档：删除后会自动切到该角色最新的其他存档；若没有其他存档，将开启一个新聊天。删除后无法恢复，其他存档不会受影响。'
+                : '删除后无法恢复，其他存档不会受影响。';
 
             var actions = document.createElement('div');
             actions.className = 'nqc-modal-actions';
@@ -1230,15 +1235,12 @@ var nqcArchive = (function(){
 
     async function deleteChat(avatar, chat, row, delBtn){
         if(switching || deleting){ nqcToast('正在处理，请稍候'); return; }
-        if(isCurrentChat(avatar, chat.file_name)){
-            nqcToast('当前正在使用这个存档，请先切换到其他存档再删除');
-            return;
-        }
         if(delBtn && delBtn.dataset.busy === '1') return;
         var fileName = String(chat.file_name || '');
         var confirmed = await askDeleteConfirm(avatar, chat);
         if(!confirmed) return;
 
+        var wasCurrent = isCurrentChat(avatar, fileName);
         deleting = true;
         if(delBtn){ delBtn.dataset.busy = '1'; delBtn.disabled = true; }
         if(row) row.classList.add('nqc-deleting');
@@ -1265,6 +1267,34 @@ var nqcArchive = (function(){
             var still = fresh.some(function(x){ return stripJsonl(x && x.file_name) === stripJsonl(fileName); });
             if(still) throw new Error('服务端未删除该存档');
 
+            // 删的是当前正在使用的存档：先让酒馆切到剩余最新存档（没有则新建聊天），避免停留在已删文件上
+            var replaced = true;
+            if(wasCurrent){
+                try{
+                    var replaceFn = (typeof c.replaceCurrentChat === 'function') ? c.replaceCurrentChat
+                        : ((typeof arcMod.replaceCurrentChat === 'function') ? arcMod.replaceCurrentChat : null);
+                    if(replaceFn){
+                        await replaceFn();
+                    }else if(fresh.length && typeof c.openCharacterChat === 'function'){
+                        await c.openCharacterChat(stripJsonl(fresh[0].file_name));
+                    }else if(typeof c.doNewChat === 'function'){
+                        await c.doNewChat();
+                    }else{
+                        replaced = false;
+                    }
+                    try{ if(c.chatId) syncSelectedChatPole(stripJsonl(c.chatId)); }catch(e){}
+                    try{ applyAvatarForCurrentChat(); }catch(e){}
+                }catch(e){
+                    replaced = false;
+                    console.warn('['+MODULE_NAME+'] 删除当前存档后自动切换失败:', e);
+                }
+                // 自动切换后再核对一次（若已经开了新的未保存聊天，列表可能仍为空，这里以服务端返回为准）
+                try{
+                    var fresh2 = await fetchCharacterChats(avatar);
+                    if(fresh2) fresh = fresh2;
+                }catch(e){}
+            }
+
             chatsCache[avatar] = sortChats(fresh);
             counts[avatar] = fresh.length;
             countsLoaded = true;
@@ -1275,7 +1305,11 @@ var nqcArchive = (function(){
             saveSettings();
 
             removeRowAndSync(avatar, chat, row);
-            nqcToast('已删除「' + archiveTitleOf(chat) + '」');
+            if(replaced){
+                nqcToast('已删除「' + archiveTitleOf(chat) + '」');
+            }else{
+                nqcToast('已删除，但自动切换失败，请点刷新重试');
+            }
         }catch(e){
             console.warn('['+MODULE_NAME+'] 删除存档失败:', e);
             nqcToast('删除失败，请重试');
@@ -1283,6 +1317,7 @@ var nqcArchive = (function(){
             deleting = false;
             if(delBtn){ delBtn.dataset.busy = '0'; delBtn.disabled = false; }
             if(row) row.classList.remove('nqc-deleting');
+            try{ updateCurrentBadges(); }catch(e){}
         }
     }
 
@@ -1480,10 +1515,10 @@ var nqcArchive = (function(){
             if(countsStarted){ countsLoaded = true; loadCounts(); }
         });
         // 切换进行中不跟随中间态刷新（否则会先闪一下别的存档的「当前」标记 / 专属头像）
-        onEvent('CHAT_CHANGED', function(){ ensureChatObserver(); if(switching) return; updateCurrentBadges(); applyAvatarForCurrentChat(); });
+        onEvent('CHAT_CHANGED', function(){ ensureChatObserver(); if(switching || deleting) return; updateCurrentBadges(); applyAvatarForCurrentChat(); });
         onEvent('CHARACTER_MESSAGE_RENDERED', onMessageRendered);
         onEvent('MESSAGE_UPDATED', onMessageRendered);
-        onEvent('CHAT_LOADED', function(){ ensureChatObserver(); if(switching) return; applyAvatarForCurrentChat(); });
+        onEvent('CHAT_LOADED', function(){ ensureChatObserver(); if(switching || deleting) return; applyAvatarForCurrentChat(); });
 
         applyAvatarForCurrentChat();
         // 酒馆自动恢复上次聊天可能早于本模块激活，延迟补几次（一次性、非轮询）
