@@ -932,9 +932,6 @@
 }
 
 /* 当前存档同样可以删除：删除后自动切到剩余最新存档 / 新建聊天 */
-.nqc-msg.nqc-cur .nqc-msg-del {
-    color: #6f6f76;
-}
 
 .nqc-msg-del:hover {
     color: #ff3b30;
