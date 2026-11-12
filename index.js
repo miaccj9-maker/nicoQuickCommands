@@ -38,6 +38,7 @@
  * v1.5.4 更新：日间增加克制金属拉丝。
  * v1.5.5 更新：日间恢复原始浅灰白；每条存档可绑定当前用户设定，加载时自动切换，删除时清理绑定。
  * v1.5.6 更新：修复当前用户设定读取；绑定面板改为列出当前角色在酒馆里绑定的全部用户设定，可查看名字与设定内容后选择。
+ * v1.5.7 更新：清除主题强塞的黑色描边与直角，选择面板改为紧凑高度，滚动条弱化，画面更简洁。
  *
  * 纯前端扩展，不修改 SillyTavern 核心代码；禁用或删除本扩展即可完全移除。
  */
@@ -46,7 +47,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.5.6';
+const MODULE_VERSION = '1.5.7';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [

@@ -1616,19 +1616,39 @@
     padding: 14px;
 }
 
+/* 主题常给按钮、列表和卡片强塞 1px 黑边、把圆角压成直角；这里统一纠正 */
+#nqc-panel .nqc-persona-modal.nqc-persona-modal,
+#nqc-panel .nqc-persona-modal .nqc-persona-card,
+#nqc-panel .nqc-persona-modal .nqc-persona-card * {
+    border: 0 !important;
+    outline: none !important;
+}
+#nqc-panel .nqc-persona-modal .nqc-persona-card { border-radius: 20px !important; }
+#nqc-panel .nqc-persona-modal .nqc-persona-row { border-radius: 12px !important; }
+#nqc-panel .nqc-persona-modal .nqc-persona-preview { border-radius: 12px !important; }
+#nqc-panel .nqc-persona-modal .nqc-persona-check { border-radius: 50% !important; }
+#nqc-panel .nqc-persona-modal .nqc-persona-btn { border-radius: 999px !important; }
+#nqc-panel .nqc-persona-modal .nqc-persona-close,
+#nqc-panel .nqc-persona-modal .nqc-persona-av { border-radius: 50% !important; }
+#nqc-panel .nqc-persona-modal .nqc-persona-card * {
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: none !important;
+}
+
 .nqc-persona-card {
     width: 100%;
-    max-width: 302px;
+    max-width: 304px;
     max-height: calc(100% - 8px);
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    padding: 14px 14px 12px;
+    padding: 16px 16px 14px;
     background: #ffffff;
-    border-radius: 18px;
-    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.2);
+    border-radius: 20px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.05) !important;
     text-align: left;
     overflow: hidden;
+    -webkit-font-smoothing: antialiased;
 }
 
 .nqc-persona-head {
@@ -1661,8 +1681,8 @@
 }
 
 .nqc-persona-close {
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
     flex-shrink: 0;
     border: 0;
     border-radius: 50%;
@@ -1681,35 +1701,54 @@
 }
 
 .nqc-persona-list {
-    flex: 1;
-    min-height: 72px;
-    max-height: 252px;
-    margin: 0 -4px;
-    padding: 0 4px;
+    flex: 0 0 auto;
+    min-height: 0;
+    max-height: 246px;
+    margin: 5px -4px 0;
+    padding: 2px 4px;
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(60, 60, 67, 0.18) transparent;
+}
+
+.nqc-persona-list::-webkit-scrollbar,
+.nqc-persona-content::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+}
+
+.nqc-persona-list::-webkit-scrollbar-track,
+.nqc-persona-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.nqc-persona-list::-webkit-scrollbar-thumb,
+.nqc-persona-content::-webkit-scrollbar-thumb {
+    background: rgba(60, 60, 67, 0.16);
+    border-radius: 4px;
 }
 
 .nqc-persona-row {
     display: flex;
     align-items: center;
-    gap: 9px;
+    gap: 10px;
     width: 100%;
     box-sizing: border-box;
-    padding: 8px 6px;
-    border: 0;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.045);
-    border-radius: 10px;
+    margin-bottom: 2px;
+    padding: 9px 7px;
+    border: 0 !important;
+    border-radius: 12px;
     background: transparent;
     text-align: left;
     font-family: inherit;
     cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s ease;
 }
 
 .nqc-persona-row:last-child {
-    border-bottom-color: transparent;
+    margin-bottom: 0;
 }
 
 .nqc-persona-row:hover {
@@ -1784,8 +1823,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(0, 0, 0, 0.12);
     border-radius: 50%;
+    background: rgba(118, 118, 128, 0.12);
     color: transparent;
 }
 
@@ -1801,7 +1840,6 @@
 }
 
 .nqc-persona-row.is-bound .nqc-persona-check {
-    border-color: #007aff;
     background: #007aff;
     color: #ffffff;
 }
@@ -1826,9 +1864,9 @@
 
 .nqc-persona-preview {
     flex-shrink: 0;
-    margin-top: 9px;
-    padding: 8px 9px;
-    border-radius: 11px;
+    margin-top: 10px;
+    padding: 9px 10px;
+    border-radius: 12px;
     background: #f5f5f7;
 }
 
@@ -1867,9 +1905,11 @@
     overflow-wrap: break-word;
     white-space: pre-wrap;
     font-size: 10.5px;
-    line-height: 1.5;
+    line-height: 1.55;
     color: #3a3a3c;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(60, 60, 67, 0.16) transparent;
 }
 
 .nqc-persona-content.is-empty {
@@ -1945,10 +1985,6 @@
     color: #ffffff;
 }
 
-#nqc-panel.night .nqc-persona-row {
-    border-bottom-color: rgba(255, 255, 255, 0.07);
-}
-
 #nqc-panel.night .nqc-persona-row:hover {
     background: rgba(255, 255, 255, 0.06);
 }
@@ -1963,7 +1999,20 @@
 }
 
 #nqc-panel.night .nqc-persona-check {
-    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.12);
+}
+
+#nqc-panel.night .nqc-persona-row.is-bound .nqc-persona-check {
+    background: #0a84ff;
+}
+
+#nqc-panel.night .nqc-persona-list {
+    scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+#nqc-panel.night .nqc-persona-list::-webkit-scrollbar-thumb,
+#nqc-panel.night .nqc-persona-content::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
 }
 
 #nqc-panel.night .nqc-persona-preview {
