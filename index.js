@@ -33,6 +33,11 @@
  *   只清理这一条档案的备注与专属头像；当前存档同样可删，删除后自动切到剩余最新存档/新建聊天。
  *
  * v1.5.1 更新：当前存档也显示删除入口（删除前明确提示会自动切换），夜间模式改为更深的层次黑。
+ * v1.5.2 更新：存档支持置顶 / 收藏 / 锁定防删；置顶排最前、收藏其次，锁定后删除入口拦截并提示先解锁。
+ * v1.5.3 更新：日间改为银灰白渐变、当前存档轻微放大。
+ * v1.5.4 更新：日间增加克制金属拉丝。
+ * v1.5.5 更新：日间恢复原始浅灰白；每条存档可绑定当前用户设定，加载时自动切换，删除时清理绑定。
+ * v1.5.6 更新：修复当前用户设定读取；绑定面板改为列出当前角色在酒馆里绑定的全部用户设定，可查看名字与设定内容后选择。
  *
  * 纯前端扩展，不修改 SillyTavern 核心代码；禁用或删除本扩展即可完全移除。
  */
@@ -41,7 +46,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.5.1';
+const MODULE_VERSION = '1.5.6';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -149,7 +154,7 @@ var nqcArchive = (function(){
         return null;
     }
     // setActiveGroup / saveChatDebounced 未挂在 getContext() 上：动态 import 一次（ESM 缓存，不会重复执行酒馆主模块）
-    var arcMod = { setActiveGroup:null, saveChatDebounced:null, doNewChat:null, createOrEditCharacter:null, deleteCharacterChatByName:null, replaceCurrentChat:null };
+    var arcMod = { setActiveGroup:null, saveChatDebounced:null, doNewChat:null, createOrEditCharacter:null, deleteCharacterChatByName:null, replaceCurrentChat:null, setUserAvatar:null };
     var arcModReady = Promise.resolve();
     try{
         arcModReady = import('../../../../script.js').then(function(m){
@@ -159,6 +164,7 @@ var nqcArchive = (function(){
             if(m && typeof m.createOrEditCharacter==='function') arcMod.createOrEditCharacter = m.createOrEditCharacter;
             if(m && typeof m.deleteCharacterChatByName==='function') arcMod.deleteCharacterChatByName = m.deleteCharacterChatByName;
             if(m && typeof m.replaceCurrentChat==='function') arcMod.replaceCurrentChat = m.replaceCurrentChat;
+            if(m && typeof m.setUserAvatar==='function') arcMod.setUserAvatar = m.setUserAvatar;
         }).catch(function(e){ console.warn('['+MODULE_NAME+'] script.js 桥接失败，群聊退出/即时保存将走兜底', e); });
     }catch(e){ console.warn('['+MODULE_NAME+'] 动态 import 不可用', e); }
 
@@ -174,11 +180,19 @@ var nqcArchive = (function(){
         if(!es[MODULE_NAME]) es[MODULE_NAME] = { notes:{} };
         if(!es[MODULE_NAME].notes) es[MODULE_NAME].notes = {};
         if(!es[MODULE_NAME].avatars) es[MODULE_NAME].avatars = {};
+        if(!es[MODULE_NAME].pins) es[MODULE_NAME].pins = {};
+        if(!es[MODULE_NAME].favorites) es[MODULE_NAME].favorites = {};
+        if(!es[MODULE_NAME].locks) es[MODULE_NAME].locks = {};
+        if(!es[MODULE_NAME].personaBindings) es[MODULE_NAME].personaBindings = {};
         return es[MODULE_NAME];
     }
-    var settings = getSettings() || { notes:{}, avatars:{} };
+    var settings = getSettings() || { notes:{}, avatars:{}, pins:{}, favorites:{}, locks:{}, personaBindings:{} };
     var notes = settings.notes;
     var avatars = settings.avatars;
+    var pins = settings.pins;
+    var favorites = settings.favorites;
+    var locks = settings.locks;
+    var personaBindings = settings.personaBindings;
     // 桥接晚于模块执行就绪时，把就绪前写入的临时数据并回真实设置
     function ensureSettings(){
         var s = getSettings();
@@ -186,7 +200,11 @@ var nqcArchive = (function(){
         if(s !== settings){
             Object.keys(notes).forEach(function(k){ if(!s.notes[k]) s.notes[k] = notes[k]; });
             Object.keys(avatars).forEach(function(k){ if(!s.avatars[k]) s.avatars[k] = avatars[k]; });
-            settings = s; notes = s.notes; avatars = s.avatars;
+            Object.keys(pins).forEach(function(k){ if(!s.pins[k]) s.pins[k] = pins[k]; });
+            Object.keys(favorites).forEach(function(k){ if(!s.favorites[k]) s.favorites[k] = favorites[k]; });
+            Object.keys(locks).forEach(function(k){ if(!s.locks[k]) s.locks[k] = locks[k]; });
+            Object.keys(personaBindings).forEach(function(k){ if(!s.personaBindings[k]) s.personaBindings[k] = personaBindings[k]; });
+            settings = s; notes = s.notes; avatars = s.avatars; pins = s.pins; favorites = s.favorites; locks = s.locks; personaBindings = s.personaBindings;
         }
         return true;
     }
@@ -214,6 +232,8 @@ var nqcArchive = (function(){
     var deleting = false;
     var confirmEl = null;
     var confirmClose = null;
+    var personaPickerEl = null;
+    var personaPickerClose = null;
 
     var boundEvents = [];
     var timers = [];
@@ -227,9 +247,146 @@ var nqcArchive = (function(){
     var SVG_IMAGE = '<svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.9 13.05l2.1 2.53 3.1-3.88L19 17H5l3.9-3.95z"/></svg>';
     var SVG_ERASER = '<svg viewBox="0 0 24 24"><path d="M15.14 3c-.51 0-1.02.2-1.41.59L2.59 14.73a2 2 0 0 0 0 2.83l3.85 3.85c.39.39.9.59 1.41.59H22v-2H7.83l-3-3L13.44 5.7l5.06 5.1 1.42-1.41a2 2 0 0 0 0-2.84l-3.36-3.36A1.98 1.98 0 0 0 15.14 3z"/></svg>';
     var SVG_TRASH = '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V5.5h6V7M6.5 7l.8 12.2a1 1 0 0 0 1 .8h7.4a1 1 0 0 0 1-.8L17.5 7M10 11v5M14 11v5"/></svg>';
+    var SVG_PIN = '<svg viewBox="0 0 24 24"><path d="M9 3h6l-1.2 6.2 2.7 2.8v2H13v6.4l-1 .9-1-.9V14H6.5v-2l2.7-2.8L9 3z"/></svg>';
+    var SVG_STAR = '<svg viewBox="0 0 24 24"><path d="M12 3.5l2.5 5.1 5.6.8-4 3.9.9 5.6-5-2.6-5 2.6.9-5.6-4-3.9 5.6-.8z"/></svg>';
+    var SVG_LOCK_OPEN = '<svg viewBox="0 0 24 24"><path d="M7.5 10V7a5 5 0 0 1 9.4-2.3"/><rect x="4.5" y="10" width="15" height="10" rx="2"/></svg>';
+    var SVG_LOCK_CLOSED = '<svg viewBox="0 0 24 24"><path d="M7.5 10V7a4.5 4.5 0 0 1 9 0v3"/><rect x="4.5" y="10" width="15" height="10" rx="2"/></svg>';
+    var SVG_USER = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M5 19.4c0-3.4 3.1-5.6 7-5.6s7 2.2 7 5.6"/></svg>';
+    var SVG_CHECK = '<svg viewBox="0 0 24 24"><path d="M4 12.5l5 5 11-11"/></svg>';
 
     /* ---------- 工具函数 ---------- */
     function noteKey(avatar, fileName){ return avatar + '::' + fileName; }
+
+    function currentPersonaKey(){
+        var c = getContext();
+        if(!c) return '';
+        // 酒馆 getContext() 不暴露 user_avatar；优先读用户设定面板的选中态
+        try{
+            var selected = document.querySelector('#user_avatar_block .avatar-container.selected');
+            var domKey = selected ? selected.getAttribute('data-avatar-id') : '';
+            if(domKey) return String(domKey);
+        }catch(e){}
+        var meta = c.chatMetadata || {};
+        if(meta.persona) return String(meta.persona);
+        var pu = c.powerUserSettings || c.power_user || {};
+        if(pu.default_persona) return String(pu.default_persona);
+        var personas = pu.personas || {};
+        var currentName = String(c.name1 || '').trim();
+        if(currentName){
+            var keys = Object.keys(personas);
+            for(var i = 0; i < keys.length; i++){
+                if(String(personas[keys[i]] || '') === currentName) return keys[i];
+            }
+        }
+        return '';
+    }
+
+    function personaNameOf(key, fallback){
+        var c = getContext();
+        var personas = (c && c.powerUserSettings && c.powerUserSettings.personas) || {};
+        var name = String(personas[key] || fallback || '').trim();
+        if(!name) name = String(key || '').replace(/\.(png|jpe?g|webp)$/i, '');
+        if(!name || name === 'user-default') name = '默认用户';
+        return name;
+    }
+
+    function personaPlainText(value){
+        var text = String(value || '');
+        text = text.replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|li|h[1-6])>/gi, '\n');
+        text = text.replace(/<[^>]+>/g, '');
+        text = text.replace(/^\s{0,3}#{1,6}\s*/gm, '').replace(/^\s*[-*+]\s+/gm, '· ');
+        text = text.replace(/\*\*(.*?)\*\*/g, '$1').replace(/__(.*?)__/g, '$1');
+        text = text.replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+        return text.trim();
+    }
+
+
+    function currentPersonaInfo(){
+        var key = currentPersonaKey();
+        if(!key) return null;
+        return { avatar:key, name:personaNameOf(key, '') };
+    }
+
+    function currentCharacterInfo(){
+        var c = getContext();
+        if(!c) return null;
+        if(c.groupId){
+            var groups = c.groups || [];
+            var group = null;
+            for(var i = 0; i < groups.length; i++){
+                if(String(groups[i].id) === String(c.groupId)){ group = groups[i]; break; }
+            }
+            return { type:'group', id:String(c.groupId), name:String((group && group.name) || '当前群聊') };
+        }
+        var chars = c.characters || [];
+        var idx = Number(c.characterId);
+        var ch = Number.isFinite(idx) ? chars[idx] : null;
+        if(!ch || !ch.avatar) return null;
+        return { type:'character', id:String(ch.avatar), name:String(ch.name || '当前角色') };
+    }
+
+    function personaAvatarUrl(key){
+        try{
+            var c = getContext();
+            if(c && typeof c.getThumbnailUrl === 'function'){
+                var url = c.getThumbnailUrl('persona', key);
+                if(url) return String(url);
+            }
+        }catch(e){}
+        return '/User Avatars/' + encodeURIComponent(String(key || ''));
+    }
+
+    function characterPersonaOptions(){
+        var c = getContext();
+        if(!c) return [];
+        var target = currentCharacterInfo();
+        if(!target || !target.id) return [];
+        var pu = c.powerUserSettings || c.power_user || {};
+        var descriptions = pu.persona_descriptions || {};
+        var out = [];
+        Object.keys(descriptions).forEach(function(key){
+            var d = descriptions[key] || {};
+            var connections = d.connections || [];
+            var connected = false;
+            for(var i = 0; i < connections.length; i++){
+                var item = connections[i];
+                if(item && item.type === target.type && String(item.id) === target.id){ connected = true; break; }
+            }
+            if(!connected) return;
+            out.push({
+                key:key,
+                name:personaNameOf(key, ''),
+                description:personaPlainText(d.description),
+                avatar:personaAvatarUrl(key)
+            });
+        });
+        out.sort(function(a, b){ return a.name.localeCompare(b.name, 'zh-Hans-CN'); });
+        return out;
+    }
+
+    function applyPersonaBinding(avatar, fileName){
+        var b = personaBindings[noteKey(avatar, fileName)];
+        if(!b || !b.avatar) return Promise.resolve();
+        var c = getContext();
+        if(!c) return Promise.resolve();
+        if(String(currentPersonaKey()) === String(b.avatar)) return Promise.resolve();
+        var personas = (c.powerUserSettings && c.powerUserSettings.personas) || {};
+        if(!personas[b.avatar] && b.avatar !== 'user-default.png'){
+            nqcToast('绑定的用户设定已不存在');
+            return Promise.resolve();
+        }
+        return arcModReady.then(function(){
+            if(typeof arcMod.setUserAvatar !== 'function'){
+                console.warn('['+MODULE_NAME+'] 无法切换用户设定：接口不可用');
+                nqcToast('无法切换用户设定');
+                return;
+            }
+            return arcMod.setUserAvatar(b.avatar, { toastPersonaNameChange:false, navigateToCurrent:false });
+        }).catch(function(e){
+            console.warn('['+MODULE_NAME+'] 切换用户设定失败:', e);
+            nqcToast('切换用户设定失败');
+        });
+    }
 
     function toMs(value){
         if(!value) return 0;
@@ -260,10 +417,18 @@ var nqcArchive = (function(){
         var p = function(n){ return String(n).padStart(2,'0'); };
         return p(d.getHours()) + ':' + p(d.getMinutes());
     }
-    function sortChats(list){
+    function isPinned(avatar, fileName){ return !!(pins && pins[noteKey(avatar, fileName)]); }
+    function isFavorite(avatar, fileName){ return !!(favorites && favorites[noteKey(avatar, fileName)]); }
+    function isLocked(avatar, fileName){ return !!(locks && locks[noteKey(avatar, fileName)]); }
+    function sortChats(list, avatar){
         var msByChat = new Map();
         list.forEach(function(c){ msByChat.set(c, toMs(c && c.last_mes)); });
-        return list.slice().sort(function(a,b){ return (msByChat.get(b) || 0) - (msByChat.get(a) || 0); });
+        return list.slice().sort(function(a,b){
+            var rankA = isPinned(avatar, a && a.file_name) ? 2 : (isFavorite(avatar, a && a.file_name) ? 1 : 0);
+            var rankB = isPinned(avatar, b && b.file_name) ? 2 : (isFavorite(avatar, b && b.file_name) ? 1 : 0);
+            if(rankA !== rankB) return rankB - rankA;
+            return (msByChat.get(b) || 0) - (msByChat.get(a) || 0);
+        });
     }
 
     /* ---------- 数据获取（酒馆原生接口，超时 + 并发上限，绝不压垮本地服务） ---------- */
@@ -515,7 +680,7 @@ var nqcArchive = (function(){
                 listEl.appendChild(err);
                 return;
             }
-            chats = sortChats(chats);
+            chats = sortChats(chats, avatar);
             chatsCache[avatar] = chats;
             if(counts[avatar] !== chats.length){
                 counts[avatar] = chats.length;
@@ -923,6 +1088,358 @@ var nqcArchive = (function(){
 
     /* ---------- 存档消息行（iMessage 会话列表风格） ---------- */
     function stripJsonl(name){ return String(name || '').replace(/\.jsonl$/i,''); }
+    function buildPinButton(avatar, chat, row){
+        var fileName = chat.file_name;
+        var on = isPinned(avatar, fileName);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'nqc-msg-pin' + (on ? ' on' : '');
+        btn.innerHTML = SVG_PIN;
+        btn.title = on ? '取消置顶' : '置顶该存档';
+        btn.setAttribute('aria-label', on ? '取消置顶' : '置顶该存档');
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.addEventListener('click', function(ev){ ev.stopPropagation(); togglePin(avatar, fileName, btn); });
+        return btn;
+    }
+    function buildFavoriteButton(avatar, chat, row){
+        var fileName = chat.file_name;
+        var on = isFavorite(avatar, fileName);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'nqc-msg-fav' + (on ? ' on' : '');
+        btn.innerHTML = SVG_STAR;
+        btn.title = on ? '取消收藏' : '收藏该存档';
+        btn.setAttribute('aria-label', on ? '取消收藏' : '收藏该存档');
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.addEventListener('click', function(ev){ ev.stopPropagation(); toggleFavorite(avatar, fileName, btn); });
+        return btn;
+    }
+    function buildLockButton(avatar, chat, row){
+        var fileName = chat.file_name;
+        var on = isLocked(avatar, fileName);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'nqc-msg-lock' + (on ? ' on' : '');
+        btn.innerHTML = on ? SVG_LOCK_CLOSED : SVG_LOCK_OPEN;
+        btn.title = on ? '已锁定防删，点击解锁' : '锁定该存档，防止误删';
+        btn.setAttribute('aria-label', on ? '解锁该存档' : '锁定该存档');
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        btn.addEventListener('click', function(ev){ ev.stopPropagation(); toggleLock(avatar, fileName, row, btn); });
+        return btn;
+    }
+    function buildPersonaBindButton(avatar, chat){
+        var fileName = chat.file_name;
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'nqc-msg-user';
+        function paint(){
+            ensureSettings();
+            var b = personaBindings[noteKey(avatar, fileName)];
+            var on = !!(b && b.avatar);
+            var label = on ? personaNameOf(b.avatar, b.name) : '绑定设定';
+            btn.classList.toggle('on', on);
+            btn.innerHTML = SVG_USER + '<span class="nqc-msg-user-name"></span>';
+            btn.querySelector('.nqc-msg-user-name').textContent = label;
+            btn.title = on ? ('已绑定「' + label + '」；点击可更换或解除') : '从当前角色绑定的用户设定里选择';
+            btn.setAttribute('aria-label', on ? ('已绑定用户设定 ' + label + '，点击管理') : '绑定用户设定');
+            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+        btn.addEventListener('click', function(ev){
+            ev.stopPropagation();
+            openPersonaPicker(avatar, fileName, btn);
+        });
+        btn.__nqcPaint = paint;
+        paint();
+        return btn;
+    }
+
+    function openPersonaPicker(avatar, fileName, chip){
+        if(personaPickerEl){ if(personaPickerClose) personaPickerClose(); return; }
+        ensureSettings();
+        var k = noteKey(avatar, fileName);
+        var binding = personaBindings[k];
+        var target = currentCharacterInfo();
+        var options = characterPersonaOptions();
+        if(binding && binding.avatar && !options.some(function(o){ return o.key === binding.avatar; })){
+            var pu = (getContext() && getContext().powerUserSettings) || {};
+            var d = (pu.persona_descriptions && pu.persona_descriptions[binding.avatar]) || {};
+            options.unshift({
+                key:binding.avatar,
+                name:personaNameOf(binding.avatar, binding.name),
+                description:personaPlainText(d.description),
+                avatar:personaAvatarUrl(binding.avatar)
+            });
+        }
+        var currentKey = currentPersonaKey();
+        var preferredKey = (binding && binding.avatar) || currentKey;
+        if(preferredKey){
+            options.sort(function(a, b){
+                if(a.key === preferredKey) return -1;
+                if(b.key === preferredKey) return 1;
+                return 0;
+            });
+        }
+        var selectedKey = binding && binding.avatar ? binding.avatar : '';
+        if(!selectedKey){
+            if(currentKey && options.some(function(o){ return o.key === currentKey; })) selectedKey = currentKey;
+        }
+
+        var host = document.getElementById('nqc-panel') || panelEl || document.body;
+        var modal = document.createElement('div');
+        modal.className = 'nqc-modal nqc-persona-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        var card = document.createElement('div');
+        card.className = 'nqc-persona-card';
+
+        var head = document.createElement('div');
+        head.className = 'nqc-persona-head';
+        var headText = document.createElement('div');
+        headText.className = 'nqc-persona-headtext';
+        var title = document.createElement('div');
+        title.className = 'nqc-persona-title';
+        title.textContent = '绑定用户设定';
+        var sub = document.createElement('div');
+        sub.className = 'nqc-persona-sub';
+        sub.textContent = target ? (target.name + ' · ' + options.length + ' 个可用设定') : '当前没有打开的角色';
+        headText.appendChild(title);
+        headText.appendChild(sub);
+        var closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'nqc-persona-close';
+        closeBtn.setAttribute('aria-label', '关闭');
+        closeBtn.textContent = '×';
+        head.appendChild(headText);
+        head.appendChild(closeBtn);
+        card.appendChild(head);
+
+        var list = document.createElement('div');
+        list.className = 'nqc-persona-list';
+        var rowEls = {};
+        options.forEach(function(opt){
+            var row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'nqc-persona-row';
+            row.dataset.key = opt.key;
+            var av = document.createElement('span');
+            av.className = 'nqc-persona-av';
+            var initial = document.createElement('span');
+            initial.textContent = String(opt.name || '?').slice(0, 1);
+            av.appendChild(initial);
+            if(opt.avatar){
+                var img = document.createElement('img');
+                img.alt = '';
+                img.src = opt.avatar;
+                img.addEventListener('error', function(){ if(img.parentNode) img.parentNode.removeChild(img); });
+                av.appendChild(img);
+            }
+            var txt = document.createElement('span');
+            txt.className = 'nqc-persona-txt';
+            var name = document.createElement('span');
+            name.className = 'nqc-persona-name';
+            name.textContent = opt.name;
+            var desc = document.createElement('span');
+            desc.className = 'nqc-persona-desc';
+            desc.textContent = opt.description || '未填写设定内容';
+            if(!opt.description) desc.classList.add('is-empty');
+            txt.appendChild(name);
+            txt.appendChild(desc);
+            var check = document.createElement('span');
+            check.className = 'nqc-persona-check';
+            check.innerHTML = SVG_CHECK;
+            row.appendChild(av);
+            row.appendChild(txt);
+            row.appendChild(check);
+            row.addEventListener('click', function(){
+                selectedKey = opt.key;
+                refresh();
+            });
+            rowEls[opt.key] = row;
+            list.appendChild(row);
+        });
+        card.appendChild(list);
+
+        if(!options.length){
+            var empty = document.createElement('div');
+            empty.className = 'nqc-persona-empty';
+            var emptyTitle = document.createElement('b');
+            emptyTitle.textContent = target ? '当前角色还没有绑定用户设定' : '请先打开一个角色';
+            var emptyText = document.createElement('span');
+            emptyText.textContent = target
+                ? '请先在酒馆「用户设定管理」里，把需要的面具绑定到该角色，再回来选择。'
+                : '打开角色或群聊后，这里会列出当前角色已绑定的用户设定。';
+            empty.appendChild(emptyTitle);
+            empty.appendChild(emptyText);
+            card.appendChild(empty);
+        } else {
+            var preview = document.createElement('div');
+            preview.className = 'nqc-persona-preview';
+            var previewHead = document.createElement('div');
+            previewHead.className = 'nqc-persona-preview-head';
+            var previewLabel = document.createElement('span');
+            previewLabel.className = 'nqc-persona-preview-label';
+            previewLabel.textContent = '设定内容';
+            var unbind = document.createElement('button');
+            unbind.type = 'button';
+            unbind.className = 'nqc-persona-unbind';
+            unbind.textContent = '解除当前绑定';
+            unbind.style.display = binding ? '' : 'none';
+            var previewContent = document.createElement('div');
+            previewContent.className = 'nqc-persona-content';
+            previewHead.appendChild(previewLabel);
+            previewHead.appendChild(unbind);
+            preview.appendChild(previewHead);
+            preview.appendChild(previewContent);
+            card.appendChild(preview);
+
+            var actions = document.createElement('div');
+            actions.className = 'nqc-persona-actions';
+            var cancel = document.createElement('button');
+            cancel.type = 'button';
+            cancel.className = 'nqc-persona-btn cancel';
+            cancel.textContent = '取消';
+            var primary = document.createElement('button');
+            primary.type = 'button';
+            primary.className = 'nqc-persona-btn primary';
+            primary.textContent = '绑定此设定';
+            actions.appendChild(cancel);
+            actions.appendChild(primary);
+            card.appendChild(actions);
+
+            function selectedOption(){
+                for(var i = 0; i < options.length; i++){ if(options[i].key === selectedKey) return options[i]; }
+                return null;
+            }
+            function refresh(){
+                var opt = selectedOption();
+                Object.keys(rowEls).forEach(function(key){
+                    rowEls[key].classList.toggle('is-sel', key === selectedKey);
+                    rowEls[key].classList.toggle('is-bound', !!(binding && binding.avatar === key));
+                });
+                previewContent.textContent = opt ? (opt.description || '未填写设定内容') : '选择一个用户设定查看内容';
+                previewContent.classList.toggle('is-empty', !opt || !opt.description);
+                var isBound = !!(opt && binding && binding.avatar === opt.key);
+                primary.disabled = !opt || isBound;
+                primary.textContent = isBound ? '已绑定' : '绑定此设定';
+                unbind.style.display = binding ? '' : 'none';
+            }
+            function bindSelected(){
+                var opt = selectedOption();
+                if(!opt) return;
+                personaBindings[k] = { avatar:opt.key, name:opt.name };
+                saveSettings();
+                if(chip && chip.__nqcPaint) chip.__nqcPaint();
+                close();
+                nqcToast('已绑定：' + opt.name);
+            }
+            function unbindCurrent(){
+                if(!personaBindings[k]) return;
+                delete personaBindings[k];
+                saveSettings();
+                if(chip && chip.__nqcPaint) chip.__nqcPaint();
+                close();
+                nqcToast('已解除用户设定绑定');
+            }
+            primary.addEventListener('click', bindSelected);
+            cancel.addEventListener('click', function(){ close(); });
+            unbind.addEventListener('click', unbindCurrent);
+            refresh();
+        }
+
+        if(!options.length){
+            var emptyActions = document.createElement('div');
+            emptyActions.className = 'nqc-persona-actions';
+            var closeOnly = document.createElement('button');
+            closeOnly.type = 'button';
+            closeOnly.className = 'nqc-persona-btn cancel';
+            closeOnly.textContent = '关闭';
+            closeOnly.addEventListener('click', function(){ close(); });
+            emptyActions.appendChild(closeOnly);
+            card.appendChild(emptyActions);
+        }
+
+        closeBtn.addEventListener('click', function(){ close(); });
+        modal.addEventListener('click', function(ev){ if(ev.target === modal) close(); });
+        card.addEventListener('click', function(ev){ ev.stopPropagation(); });
+        modal.appendChild(card);
+        host.appendChild(modal);
+        personaPickerEl = modal;
+
+        function close(){
+            if(!modal.parentNode) return;
+            try{ modal.parentNode.removeChild(modal); }catch(e){}
+            document.removeEventListener('keydown', onKey, true);
+            personaPickerEl = null;
+            personaPickerClose = null;
+        }
+        function onKey(ev){
+            if(ev.key === 'Escape'){ ev.preventDefault(); close(); }
+        }
+        personaPickerClose = close;
+        document.addEventListener('keydown', onKey, true);
+    }
+
+    function resortChatRows(avatar){
+        if(chatsCache[avatar]) chatsCache[avatar] = sortChats(chatsCache[avatar], avatar);
+        if(!listEl || listEl.dataset.avatar !== avatar) return;
+        var order = new Map();
+        (chatsCache[avatar] || []).forEach(function(c, i){ order.set(String(c && c.file_name), i); });
+        var rows = Array.prototype.slice.call(listEl.querySelectorAll('.nqc-msg'));
+        rows.sort(function(a, b){
+            var ia = order.has(a.dataset.file) ? order.get(a.dataset.file) : 1e9;
+            var ib = order.has(b.dataset.file) ? order.get(b.dataset.file) : 1e9;
+            return ia - ib;
+        });
+        rows.forEach(function(r){ listEl.appendChild(r); });
+        filterRows(((filterEl && filterEl.value) || '').trim().toLowerCase());
+    }
+    function togglePin(avatar, fileName, btn){
+        ensureSettings();
+        var k = noteKey(avatar, fileName);
+        var next = !pins[k];
+        if(next) pins[k] = true; else delete pins[k];
+        saveSettings();
+        if(btn){
+            btn.classList.toggle('on', next);
+            btn.title = next ? '取消置顶' : '置顶该存档';
+            btn.setAttribute('aria-label', next ? '取消置顶' : '置顶该存档');
+            btn.setAttribute('aria-pressed', next ? 'true' : 'false');
+        }
+        resortChatRows(avatar);
+        nqcToast(next ? '已置顶该存档' : '已取消置顶');
+    }
+    function toggleFavorite(avatar, fileName, btn){
+        ensureSettings();
+        var k = noteKey(avatar, fileName);
+        var next = !favorites[k];
+        if(next) favorites[k] = true; else delete favorites[k];
+        saveSettings();
+        if(btn){
+            btn.classList.toggle('on', next);
+            btn.title = next ? '取消收藏' : '收藏该存档';
+            btn.setAttribute('aria-label', next ? '取消收藏' : '收藏该存档');
+            btn.setAttribute('aria-pressed', next ? 'true' : 'false');
+        }
+        resortChatRows(avatar);
+        nqcToast(next ? '已收藏该存档' : '已取消收藏');
+    }
+    function toggleLock(avatar, fileName, row, btn){
+        ensureSettings();
+        var k = noteKey(avatar, fileName);
+        var next = !locks[k];
+        if(next) locks[k] = true; else delete locks[k];
+        saveSettings();
+        if(row) row.classList.toggle('nqc-locked', next);
+        if(btn){
+            btn.classList.toggle('on', next);
+            btn.innerHTML = next ? SVG_LOCK_CLOSED : SVG_LOCK_OPEN;
+            btn.title = next ? '已锁定防删，点击解锁' : '锁定该存档，防止误删';
+            btn.setAttribute('aria-label', next ? '解锁该存档' : '锁定该存档');
+            btn.setAttribute('aria-pressed', next ? 'true' : 'false');
+        }
+        nqcToast(next ? '已锁定，删除前需先解锁' : '已解锁');
+    }
+
     function buildChatRow(chat, avatar, currentChat){
         var row = document.createElement('div');
         row.className = 'nqc-msg';
@@ -931,6 +1448,9 @@ var nqcArchive = (function(){
         var ctxForCur = getContext();
         var curCharForRow = ctxForCur && ctxForCur.characters ? ctxForCur.characters[ctxForCur.characterId] : null;
         if(currentChat && curCharForRow && curCharForRow.avatar === avatar && stripJsonl(chat.file_name) === currentChat) row.classList.add('nqc-cur');
+        if(isPinned(avatar, chat.file_name)) row.classList.add('nqc-pinned');
+        if(isFavorite(avatar, chat.file_name)) row.classList.add('nqc-favorited');
+        if(isLocked(avatar, chat.file_name)) row.classList.add('nqc-locked');
 
         row.appendChild(buildChatAvatar(chat, avatar));
 
@@ -961,7 +1481,11 @@ var nqcArchive = (function(){
         var sub = document.createElement('div');
         sub.className = 'nqc-msg-sub';
         var msgs = Number.isFinite(Number(chat.chat_items)) ? Number(chat.chat_items) : 0;
-        sub.textContent = msgs + ' 条 · ' + (chat.file_size || '?');
+        var meta = document.createElement('span');
+        meta.className = 'nqc-msg-meta';
+        meta.textContent = msgs + ' 条 · ' + (chat.file_size || '?');
+        sub.appendChild(meta);
+        sub.appendChild(buildPersonaBindButton(avatar, chat));
 
         var preview = document.createElement('div');
         preview.className = 'nqc-msg-pv';
@@ -1007,6 +1531,9 @@ var nqcArchive = (function(){
         var actions = document.createElement('div');
         actions.className = 'nqc-msg-actions';
         actions.appendChild(loadBtn);
+        actions.appendChild(buildPinButton(avatar, chat, row));
+        actions.appendChild(buildFavoriteButton(avatar, chat, row));
+        actions.appendChild(buildLockButton(avatar, chat, row));
         actions.appendChild(delBtn);
         row.appendChild(actions);
 
@@ -1099,6 +1626,7 @@ var nqcArchive = (function(){
             try{ syncSelectedChatPole(chatBase); }catch(e){}
             updateCurrentBadges();
             applyAvatarForCurrentChat();
+            await applyPersonaBinding(avatar, fileName);
             nqcToast('已加载存档');
         }catch(e){
             console.error('['+MODULE_NAME+'] 加载存档失败:', e);
@@ -1234,9 +1762,10 @@ var nqcArchive = (function(){
     }
 
     async function deleteChat(avatar, chat, row, delBtn){
+        var fileName = String(chat.file_name || '');
+        if(isLocked(avatar, fileName)){ nqcToast('该存档已锁定，请先点锁图标解锁'); return; }
         if(switching || deleting){ nqcToast('正在处理，请稍候'); return; }
         if(delBtn && delBtn.dataset.busy === '1') return;
-        var fileName = String(chat.file_name || '');
         var confirmed = await askDeleteConfirm(avatar, chat);
         if(!confirmed) return;
 
@@ -1295,12 +1824,16 @@ var nqcArchive = (function(){
                 }catch(e){}
             }
 
-            chatsCache[avatar] = sortChats(fresh);
+            chatsCache[avatar] = sortChats(fresh, avatar);
             counts[avatar] = fresh.length;
             countsLoaded = true;
-            // 只清理这条存档自己的备注 / 专属头像，绝不按角色整体清空
+            // 只清理这条存档自己的备注 / 专属头像 / 置顶 / 收藏 / 锁定，绝不按角色整体清空
             delete notes[noteKey(avatar, fileName)];
             delete avatars[noteKey(avatar, fileName)];
+            delete pins[noteKey(avatar, fileName)];
+            delete favorites[noteKey(avatar, fileName)];
+            delete locks[noteKey(avatar, fileName)];
+            delete personaBindings[noteKey(avatar, fileName)];
             ensureSettings();
             saveSettings();
 
@@ -1612,7 +2145,7 @@ function buildPanel() {
     try {
         const tabsEl = panel.querySelector('.nqc-tabs');
         if (tabsEl) tabsEl.style.setProperty('border-radius', '999px', 'important');
-        panel.style.setProperty('border-radius', '0 16px 16px 0', 'important');
+        panel.style.setProperty('border-radius', '0 12px 12px 0', 'important');
     } catch (e) { /* 忽略 */ }
 
     // 夜间模式：灰色大背景 + 黑色子模块 + 白色文本（状态本地持久化）

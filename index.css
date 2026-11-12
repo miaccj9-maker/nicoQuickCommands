@@ -1,6 +1,6 @@
 /* ============================================================
    nicoQuickCommands —— 快捷指令 + 聊天存档侧栏（iOS 极简风）
-   分段控件 / 分组卡片 / 细线分隔 / 毛玻璃底 / 克制的圆角与留白
+   分段控件 / 分组卡片 / 细线分隔 / 原始浅灰白 / 克制的圆角与留白
    固定中性配色，仅随「夜间模式」在黑白之间镜像，不受酒馆主题影响
    ============================================================ */
 
@@ -14,9 +14,9 @@
     flex-direction: column;
     box-sizing: border-box;
     background: #f4f4f7;
-    border: 1px solid rgba(0, 0, 0, 0.06);
+    border: 1px solid rgba(0, 0, 0, 0.025);
     border-left: none;
-    border-radius: 0 16px 16px 0;
+    border-radius: 0 12px 12px 0;
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.05);
     z-index: 999999;
     transition: left 0.42s cubic-bezier(0.32, 0.72, 0, 1);
@@ -189,9 +189,9 @@
 }
 
 .nqc-tab.active {
-    background: #ffffff;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfcfd 100%);
     color: #1c1c1e;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 1px 3px rgba(20, 24, 32, 0.1), inset 0 1px 0 #ffffff;
 }
 
 /* 抵抗酒馆主题对按钮圆角的覆写（主题常给 button / .menu_button 设 0 圆角） */
@@ -388,7 +388,7 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    border-top: 1px solid transparent;
 }
 
 .nqc-arc-bar {
@@ -710,15 +710,21 @@
     padding: 9px;
     border-radius: 16px;
     background: rgba(255, 255, 255, 0.66);
-    transition: background 0.15s ease;
+    transition: background 0.15s ease, box-shadow 0.2s ease, transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+    transform-origin: 50% 50%;
 }
 
 .nqc-msg:hover {
     background: rgba(255, 255, 255, 0.92);
 }
 
+/* 当前存档：淡蓝底 + 轻微放大 + 轻投影形成层次 */
 .nqc-msg.nqc-cur {
     background: rgba(0, 122, 255, 0.07);
+    box-shadow: 0 10px 22px -14px rgba(20, 24, 32, 0.35);
+    transform: scale(1.02);
+    position: relative;
+    z-index: 1;
 }
 
 .nqc-msg-av {
@@ -835,9 +841,71 @@
 }
 
 .nqc-msg-sub {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    line-height: 16px;
     font-size: 10px;
     color: #8e8e93;
     font-variant-numeric: tabular-nums;
+}
+
+.nqc-msg-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 存档绑定的用户设定：小型胶囊，不占额外一行 */
+.nqc-msg-user {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 104px;
+    height: 16px;
+    padding: 0 5px;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 999px;
+    background: rgba(118, 118, 128, 0.1);
+    color: #8e8e93;
+    font-family: inherit;
+    font-size: 9.5px;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nqc-msg-user svg {
+    width: 10px;
+    height: 10px;
+    flex-shrink: 0;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.nqc-msg-user-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nqc-msg-user:hover {
+    background: rgba(118, 118, 128, 0.18);
+}
+
+.nqc-msg-user.on {
+    color: #007aff;
+    background: rgba(0, 122, 255, 0.09);
+}
+
+.nqc-msg-user.on:hover {
+    background: rgba(0, 122, 255, 0.15);
 }
 
 .nqc-msg-pv {
@@ -873,7 +941,9 @@
 }
 
 .nqc-msg-load {
-    flex-shrink: 0;
+    grid-column: 1 / span 2;
+    box-sizing: border-box;
+    width: 100%;
     align-self: center;
     border: 0;
     border-radius: 999px;
@@ -881,9 +951,10 @@
     color: #007aff;
     font-size: 10.5px;
     font-weight: 600;
-    padding: 6px 11px;
+    padding: 6px 0;
     cursor: pointer;
     font-family: inherit;
+    text-align: center;
     transition: background 0.15s ease;
 }
 
@@ -895,12 +966,13 @@
     background: rgba(0, 122, 255, 0.26);
 }
 
-/* 每行的操作列：加载 + 删除（小图标，需二次确认） */
+/* 每行的操作列：加载 + 置顶 / 收藏 / 锁定 + 删除（紧凑两列网格） */
 .nqc-msg-actions {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 22px 22px;
+    gap: 4px;
     align-items: center;
-    gap: 5px;
+    justify-items: center;
     align-self: center;
     flex-shrink: 0;
 }
@@ -940,6 +1012,76 @@
 
 .nqc-msg-del:active {
     background: rgba(255, 59, 48, 0.18);
+}
+
+/* 置顶 / 收藏 / 锁定防删：行内极简状态按钮 */
+.nqc-msg-pin,
+.nqc-msg-fav,
+.nqc-msg-lock {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #8e8e93;
+    padding: 0;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+}
+
+.nqc-msg-pin svg,
+.nqc-msg-fav svg,
+.nqc-msg-lock svg {
+    width: 13px;
+    height: 13px;
+    display: block;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.nqc-msg-pin:hover,
+.nqc-msg-fav:hover,
+.nqc-msg-lock:hover {
+    background: rgba(17, 17, 17, 0.05);
+}
+
+.nqc-msg-pin.on {
+    color: #007aff;
+    background: rgba(0, 122, 255, 0.09);
+}
+
+.nqc-msg-pin.on svg {
+    fill: currentColor;
+}
+
+.nqc-msg-fav.on {
+    color: #ff9f0a;
+    background: rgba(255, 159, 10, 0.1);
+}
+
+.nqc-msg-fav.on svg {
+    fill: currentColor;
+}
+
+.nqc-msg-lock.on {
+    color: #1c1c1e;
+    background: rgba(17, 17, 17, 0.06);
+}
+
+.nqc-msg.nqc-locked .nqc-msg-del {
+    opacity: 0.35;
+}
+
+.nqc-msg.nqc-locked .nqc-msg-del:hover {
+    opacity: 0.6;
 }
 
 .nqc-msg.nqc-deleting {
@@ -1307,6 +1449,7 @@
 
 #nqc-panel.night .nqc-msg {
     background: #17171a;
+    box-shadow: none;
 }
 
 #nqc-panel.night .nqc-msg:hover {
@@ -1315,6 +1458,7 @@
 
 #nqc-panel.night .nqc-msg.nqc-cur {
     background: rgba(10, 132, 255, 0.19);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 22px -14px rgba(0, 0, 0, 0.8);
 }
 
 #nqc-panel.night .nqc-msg-title {
@@ -1385,6 +1529,47 @@
     background: rgba(255, 69, 58, 0.14);
 }
 
+#nqc-panel.night .nqc-msg-pin,
+#nqc-panel.night .nqc-msg-fav,
+#nqc-panel.night .nqc-msg-lock {
+    color: #8e8e93;
+}
+
+#nqc-panel.night .nqc-msg-pin:hover,
+#nqc-panel.night .nqc-msg-fav:hover,
+#nqc-panel.night .nqc-msg-lock:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+#nqc-panel.night .nqc-msg-pin.on {
+    color: #0a84ff;
+    background: rgba(10, 132, 255, 0.15);
+}
+
+#nqc-panel.night .nqc-msg-fav.on {
+    color: #ffd60a;
+    background: rgba(255, 214, 10, 0.14);
+}
+
+#nqc-panel.night .nqc-msg-lock.on {
+    color: #f2f2f7;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+#nqc-panel.night .nqc-msg-user {
+    color: #aeaeb2;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+#nqc-panel.night .nqc-msg-user:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+
+#nqc-panel.night .nqc-msg-user.on {
+    color: #64b5ff;
+    background: rgba(10, 132, 255, 0.15);
+}
+
 #nqc-panel.night .nqc-msg.nqc-loading {
     background: rgba(10, 132, 255, 0.18);
 }
@@ -1424,4 +1609,381 @@
 #nqc-panel.night .nqc-modal-btn.danger {
     background: #ff453a;
     color: #ffffff;
+}
+
+/* ===== 用户设定选择面板：角色已绑定的全部设定，可看名字与内容 ===== */
+.nqc-persona-modal {
+    padding: 14px;
+}
+
+.nqc-persona-card {
+    width: 100%;
+    max-width: 302px;
+    max-height: calc(100% - 8px);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 14px 12px;
+    background: #ffffff;
+    border-radius: 18px;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.2);
+    text-align: left;
+    overflow: hidden;
+}
+
+.nqc-persona-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.nqc-persona-headtext {
+    flex: 1;
+    min-width: 0;
+}
+
+.nqc-persona-title {
+    font-size: 14.5px;
+    font-weight: 700;
+    color: #1c1c1e;
+    letter-spacing: 0.2px;
+    line-height: 1.25;
+}
+
+.nqc-persona-sub {
+    margin-top: 3px;
+    font-size: 10.5px;
+    color: #8e8e93;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.nqc-persona-close {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #8e8e93;
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.nqc-persona-close:hover {
+    background: rgba(118, 118, 128, 0.1);
+    color: #1c1c1e;
+}
+
+.nqc-persona-list {
+    flex: 1;
+    min-height: 72px;
+    max-height: 252px;
+    margin: 0 -4px;
+    padding: 0 4px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+.nqc-persona-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 6px;
+    border: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.045);
+    border-radius: 10px;
+    background: transparent;
+    text-align: left;
+    font-family: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.nqc-persona-row:last-child {
+    border-bottom-color: transparent;
+}
+
+.nqc-persona-row:hover {
+    background: rgba(118, 118, 128, 0.06);
+}
+
+.nqc-persona-row.is-sel {
+    background: rgba(0, 122, 255, 0.07);
+}
+
+.nqc-persona-av {
+    position: relative;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    overflow: hidden;
+    background: rgba(118, 118, 128, 0.14);
+    color: #8e8e93;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.nqc-persona-av img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.nqc-persona-txt {
+    flex: 1;
+    min-width: 0;
+}
+
+.nqc-persona-name {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1c1c1e;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.nqc-persona-desc {
+    display: -webkit-box;
+    margin-top: 2px;
+    overflow: hidden;
+    font-size: 10px;
+    line-height: 1.4;
+    color: #8e8e93;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    word-break: break-word;
+}
+
+.nqc-persona-desc.is-empty {
+    color: #aeaeb2;
+}
+
+.nqc-persona-check {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    border-radius: 50%;
+    color: transparent;
+}
+
+.nqc-persona-check svg {
+    width: 9px;
+    height: 9px;
+    display: block;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.nqc-persona-row.is-bound .nqc-persona-check {
+    border-color: #007aff;
+    background: #007aff;
+    color: #ffffff;
+}
+
+.nqc-persona-empty {
+    flex: 1;
+    min-height: 96px;
+    padding: 14px 8px;
+    font-size: 10.5px;
+    line-height: 1.6;
+    color: #8e8e93;
+    text-align: center;
+}
+
+.nqc-persona-empty b {
+    display: block;
+    margin-bottom: 4px;
+    color: #1c1c1e;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.nqc-persona-preview {
+    flex-shrink: 0;
+    margin-top: 9px;
+    padding: 8px 9px;
+    border-radius: 11px;
+    background: #f5f5f7;
+}
+
+.nqc-persona-preview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.nqc-persona-preview-label {
+    font-size: 9.5px;
+    letter-spacing: 0.3px;
+    color: #8e8e93;
+}
+
+.nqc-persona-unbind {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: #ff3b30;
+    font-family: inherit;
+    font-size: 10px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.nqc-persona-unbind:hover {
+    text-decoration: underline;
+}
+
+.nqc-persona-content {
+    max-height: 92px;
+    overflow: auto;
+    overflow-wrap: break-word;
+    white-space: pre-wrap;
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: #3a3a3c;
+    -webkit-overflow-scrolling: touch;
+}
+
+.nqc-persona-content.is-empty {
+    color: #aeaeb2;
+}
+
+.nqc-persona-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+    margin-top: 10px;
+}
+
+.nqc-persona-btn {
+    flex: 1;
+    height: 36px;
+    border: 0;
+    border-radius: 999px;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.nqc-persona-btn.cancel {
+    background: #efeff4;
+    color: #1c1c1e;
+}
+
+.nqc-persona-btn.cancel:hover {
+    background: #e5e5ea;
+}
+
+.nqc-persona-btn.primary {
+    background: #007aff;
+    color: #ffffff;
+}
+
+.nqc-persona-btn.primary:hover {
+    background: #0a6fe0;
+}
+
+.nqc-persona-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+#nqc-panel.night .nqc-persona-card {
+    background: #1c1c1f;
+}
+
+#nqc-panel.night .nqc-persona-title,
+#nqc-panel.night .nqc-persona-name,
+#nqc-panel.night .nqc-persona-empty b {
+    color: #ffffff;
+}
+
+#nqc-panel.night .nqc-persona-sub,
+#nqc-panel.night .nqc-persona-desc,
+#nqc-panel.night .nqc-persona-empty,
+#nqc-panel.night .nqc-persona-preview-label {
+    color: #aeaeb2;
+}
+
+#nqc-panel.night .nqc-persona-close {
+    color: #aeaeb2;
+}
+
+#nqc-panel.night .nqc-persona-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+#nqc-panel.night .nqc-persona-row {
+    border-bottom-color: rgba(255, 255, 255, 0.07);
+}
+
+#nqc-panel.night .nqc-persona-row:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+#nqc-panel.night .nqc-persona-row.is-sel {
+    background: rgba(10, 132, 255, 0.14);
+}
+
+#nqc-panel.night .nqc-persona-av {
+    background: rgba(255, 255, 255, 0.1);
+    color: #aeaeb2;
+}
+
+#nqc-panel.night .nqc-persona-check {
+    border-color: rgba(255, 255, 255, 0.16);
+}
+
+#nqc-panel.night .nqc-persona-preview {
+    background: #2c2c2e;
+}
+
+#nqc-panel.night .nqc-persona-content {
+    color: #f2f2f7;
+}
+
+#nqc-panel.night .nqc-persona-content.is-empty,
+#nqc-panel.night .nqc-persona-desc.is-empty {
+    color: #8e8e93;
+}
+
+#nqc-panel.night .nqc-persona-btn.cancel {
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+#nqc-panel.night .nqc-persona-btn.cancel:hover {
+    background: rgba(255, 255, 255, 0.16);
 }
