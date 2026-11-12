@@ -40,6 +40,7 @@
  * v1.5.6 更新：修复当前用户设定读取；绑定面板改为列出当前角色在酒馆里绑定的全部用户设定，可查看名字与设定内容后选择。
  * v1.5.7 更新：清除主题强塞的黑色描边与直角，选择面板改为紧凑高度，滚动条弱化，画面更简洁。
  * v1.5.8 更新：未绑定时点击胶囊直接绑定当前用户设定（只有一个可用设定时也直接绑定），已绑定后再点才打开面板更换或解除。
+ * v1.5.9 更新：绑定读取按存档所属角色匹配，不再误用当前聊天角色；角色原本已绑定的面具会作为默认显示，不再显示为未绑定。
  *
  * 纯前端扩展，不修改 SillyTavern 核心代码；禁用或删除本扩展即可完全移除。
  */
@@ -48,7 +49,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.5.8';
+const MODULE_VERSION = '1.5.9';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -345,10 +346,30 @@ var nqcArchive = (function(){
         return '/User Avatars/' + encodeURIComponent(String(key || ''));
     }
 
-    function characterPersonaOptions(){
+    function characterTargetForAvatar(avatar){
+        var c = getContext();
+        if(!c || !avatar) return null;
+        var key = String(avatar);
+        var chars = c.characters || [];
+        for(var i = 0; i < chars.length; i++){
+            if(chars[i] && String(chars[i].avatar) === key){
+                return { type:'character', id:key, name:String(chars[i].name || key) };
+            }
+        }
+        var groups = c.groups || [];
+        for(var j = 0; j < groups.length; j++){
+            var g = groups[j];
+            if(g && (String(g.id) === key || String(g.avatar || '') === key)){
+                return { type:'group', id:String(g.id), name:String(g.name || '群聊') };
+            }
+        }
+        return { type:'character', id:key, name:key.replace(/\.(png|jpe?g|webp)$/i, '') };
+    }
+
+    function characterPersonaOptions(avatar){
         var c = getContext();
         if(!c) return [];
-        var target = currentCharacterInfo();
+        var target = avatar ? characterTargetForAvatar(avatar) : currentCharacterInfo();
         if(!target || !target.id) return [];
         var pu = c.powerUserSettings || c.power_user || {};
         var descriptions = pu.persona_descriptions || {};
@@ -373,8 +394,25 @@ var nqcArchive = (function(){
         return out;
     }
 
-    function applyPersonaBinding(avatar, fileName){
+    // 存档没有单独绑定时，继承角色当前正在使用的用户设定（角色只绑了一个时直接用它）
+    function effectivePersonaBinding(avatar, fileName, options){
+        ensureSettings();
         var b = personaBindings[noteKey(avatar, fileName)];
+        if(b && b.avatar) return { avatar:b.avatar, name:b.name, explicit:true };
+        var list = options || characterPersonaOptions(avatar);
+        if(!list.length) return null;
+        var currentKey = currentPersonaKey();
+        if(currentKey){
+            for(var i = 0; i < list.length; i++){
+                if(list[i].key === currentKey) return { avatar:list[i].key, name:list[i].name, explicit:false };
+            }
+        }
+        if(list.length === 1) return { avatar:list[0].key, name:list[0].name, explicit:false };
+        return null;
+    }
+
+    function applyPersonaBinding(avatar, fileName){
+        var b = effectivePersonaBinding(avatar, fileName);
         if(!b || !b.avatar) return Promise.resolve();
         var c = getContext();
         if(!c) return Promise.resolve();
@@ -1144,14 +1182,17 @@ var nqcArchive = (function(){
         btn.className = 'nqc-msg-user';
         function paint(){
             ensureSettings();
-            var b = personaBindings[k];
+            var options = characterPersonaOptions(avatar);
+            var b = effectivePersonaBinding(avatar, fileName, options);
             var on = !!(b && b.avatar);
-            var label = on ? personaNameOf(b.avatar, b.name) : '绑定设定';
+            var label = on ? personaNameOf(b.avatar, b.name) : (options.length ? options.length + ' 个设定' : '绑定设定');
             btn.classList.toggle('on', on);
             btn.innerHTML = SVG_USER + '<span class="nqc-msg-user-name"></span>';
             btn.querySelector('.nqc-msg-user-name').textContent = label;
-            btn.title = on ? ('已绑定「' + label + '」；点击可更换或解除') : '点击直接绑定当前用户设定';
-            btn.setAttribute('aria-label', on ? ('已绑定用户设定 ' + label + '，点击管理') : '绑定用户设定');
+            btn.title = on
+                ? ('已绑定「' + label + '」；点击可更换或解除')
+                : (options.length ? '当前角色有 ' + options.length + ' 个可用设定，点击选择' : '当前角色还没有绑定用户设定');
+            btn.setAttribute('aria-label', on ? ('已绑定用户设定 ' + label + '，点击管理') : (options.length ? '选择用户设定' : '绑定用户设定'));
             btn.setAttribute('aria-pressed', on ? 'true' : 'false');
         }
         function bindDirect(opt){
@@ -1168,7 +1209,7 @@ var nqcArchive = (function(){
                 openPersonaPicker(avatar, fileName, btn);
                 return;
             }
-            var options = characterPersonaOptions();
+            var options = characterPersonaOptions(avatar);
             if(!options.length){
                 nqcToast('当前角色还没有绑定用户设定');
                 return;
@@ -1196,8 +1237,8 @@ var nqcArchive = (function(){
         ensureSettings();
         var k = noteKey(avatar, fileName);
         var binding = personaBindings[k];
-        var target = currentCharacterInfo();
-        var options = characterPersonaOptions();
+        var target = characterTargetForAvatar(avatar);
+        var options = characterPersonaOptions(avatar);
         if(binding && binding.avatar && !options.some(function(o){ return o.key === binding.avatar; })){
             var pu = (getContext() && getContext().powerUserSettings) || {};
             var d = (pu.persona_descriptions && pu.persona_descriptions[binding.avatar]) || {};
