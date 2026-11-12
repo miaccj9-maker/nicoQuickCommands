@@ -39,6 +39,7 @@
  * v1.5.5 更新：日间恢复原始浅灰白；每条存档可绑定当前用户设定，加载时自动切换，删除时清理绑定。
  * v1.5.6 更新：修复当前用户设定读取；绑定面板改为列出当前角色在酒馆里绑定的全部用户设定，可查看名字与设定内容后选择。
  * v1.5.7 更新：清除主题强塞的黑色描边与直角，选择面板改为紧凑高度，滚动条弱化，画面更简洁。
+ * v1.5.8 更新：未绑定时点击胶囊直接绑定当前用户设定（只有一个可用设定时也直接绑定），已绑定后再点才打开面板更换或解除。
  *
  * 纯前端扩展，不修改 SillyTavern 核心代码；禁用或删除本扩展即可完全移除。
  */
@@ -47,7 +48,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.5.7';
+const MODULE_VERSION = '1.5.8';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -1137,23 +1138,52 @@ var nqcArchive = (function(){
     }
     function buildPersonaBindButton(avatar, chat){
         var fileName = chat.file_name;
+        var k = noteKey(avatar, fileName);
         var btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'nqc-msg-user';
         function paint(){
             ensureSettings();
-            var b = personaBindings[noteKey(avatar, fileName)];
+            var b = personaBindings[k];
             var on = !!(b && b.avatar);
             var label = on ? personaNameOf(b.avatar, b.name) : '绑定设定';
             btn.classList.toggle('on', on);
             btn.innerHTML = SVG_USER + '<span class="nqc-msg-user-name"></span>';
             btn.querySelector('.nqc-msg-user-name').textContent = label;
-            btn.title = on ? ('已绑定「' + label + '」；点击可更换或解除') : '从当前角色绑定的用户设定里选择';
+            btn.title = on ? ('已绑定「' + label + '」；点击可更换或解除') : '点击直接绑定当前用户设定';
             btn.setAttribute('aria-label', on ? ('已绑定用户设定 ' + label + '，点击管理') : '绑定用户设定');
             btn.setAttribute('aria-pressed', on ? 'true' : 'false');
         }
+        function bindDirect(opt){
+            personaBindings[k] = { avatar:opt.key, name:opt.name };
+            saveSettings();
+            paint();
+            nqcToast('已绑定：' + opt.name);
+        }
         btn.addEventListener('click', function(ev){
             ev.stopPropagation();
+            ensureSettings();
+            // 已绑定：打开面板更换或解除
+            if(personaBindings[k] && personaBindings[k].avatar){
+                openPersonaPicker(avatar, fileName, btn);
+                return;
+            }
+            var options = characterPersonaOptions();
+            if(!options.length){
+                nqcToast('当前角色还没有绑定用户设定');
+                return;
+            }
+            // 未绑定：当前用户设定在可绑定列表里，就直接绑，不再弹面板
+            var currentKey = currentPersonaKey();
+            var direct = null;
+            if(currentKey){
+                for(var i = 0; i < options.length; i++){
+                    if(options[i].key === currentKey){ direct = options[i]; break; }
+                }
+            }
+            // 只有一个可用设定时同样直接绑定
+            if(!direct && options.length === 1) direct = options[0];
+            if(direct){ bindDirect(direct); return; }
             openPersonaPicker(avatar, fileName, btn);
         });
         btn.__nqcPaint = paint;
