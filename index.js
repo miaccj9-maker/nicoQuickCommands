@@ -274,9 +274,16 @@ var nqcArchive = (function(){
         var currentName = String(c.name1 || '').trim();
         if(currentName){
             var keys = Object.keys(personas);
+            var matched = '';
+            var matchedCount = 0;
             for(var i = 0; i < keys.length; i++){
-                if(String(personas[keys[i]] || '') === currentName) return keys[i];
+                if(String(personas[keys[i]] || '') === currentName){
+                    if(!matched) matched = keys[i];
+                    matchedCount++;
+                }
             }
+            // 同名面具不唯一时不做反查，避免误判成“已是当前设定”而跳过切换
+            if(matchedCount === 1) return matched;
         }
         return '';
     }
