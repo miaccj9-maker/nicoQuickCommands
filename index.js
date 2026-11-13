@@ -41,6 +41,7 @@
  * v1.5.7 更新：清除主题强塞的黑色描边与直角，选择面板改为紧凑高度，滚动条弱化，画面更简洁。
  * v1.5.8 更新：未绑定时点击胶囊直接绑定当前用户设定（只有一个可用设定时也直接绑定），已绑定后再点才打开面板更换或解除。
  * v1.5.9 更新：绑定读取按存档所属角色匹配，不再误用当前聊天角色；角色原本已绑定的面具会作为默认显示，不再显示为未绑定。
+ * v1.5.10 更新：选择面板打开时自动选中当前/第一个设定，面具行改为按下即选中，避免点了没反应。
  *
  * 纯前端扩展，不修改 SillyTavern 核心代码；禁用或删除本扩展即可完全移除。
  */
@@ -49,7 +50,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.5.9';
+const MODULE_VERSION = '1.5.10';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -1262,6 +1263,7 @@ var nqcArchive = (function(){
         if(!selectedKey){
             if(currentKey && options.some(function(o){ return o.key === currentKey; })) selectedKey = currentKey;
         }
+        if(!selectedKey && options.length) selectedKey = options[0].key;
 
         var host = document.getElementById('nqc-panel') || panelEl || document.body;
         var modal = document.createElement('div');
@@ -1329,10 +1331,15 @@ var nqcArchive = (function(){
             row.appendChild(av);
             row.appendChild(txt);
             row.appendChild(check);
-            row.addEventListener('click', function(){
+            function chooseRow(){
                 selectedKey = opt.key;
                 refresh();
+            }
+            row.addEventListener('pointerdown', function(ev){
+                if(ev.pointerType === 'mouse' && ev.button !== 0) return;
+                chooseRow();
             });
+            row.addEventListener('click', chooseRow);
             rowEls[opt.key] = row;
             list.appendChild(row);
         });

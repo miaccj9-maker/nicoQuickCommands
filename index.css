@@ -1744,6 +1744,7 @@
     text-align: left;
     font-family: inherit;
     cursor: pointer;
+    touch-action: manipulation;
     transition: background 0.15s ease;
 }
 
