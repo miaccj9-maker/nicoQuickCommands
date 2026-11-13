@@ -42,6 +42,7 @@
  * v1.5.8 更新：未绑定时点击胶囊直接绑定当前用户设定（只有一个可用设定时也直接绑定），已绑定后再点才打开面板更换或解除。
  * v1.5.9 更新：绑定读取按存档所属角色匹配，不再误用当前聊天角色；角色原本已绑定的面具会作为默认显示，不再显示为未绑定。
  * v1.5.10 更新：选择面板打开时自动选中当前/第一个设定，面具行改为按下即选中，避免点了没反应。
+ * v1.5.11 更新：修复选择面板行点击失效（refresh 作用域导致点击报错），现在可正常切换面具。
  *
  * 纯前端扩展，不修改 SillyTavern 核心代码；禁用或删除本扩展即可完全移除。
  */
@@ -50,7 +51,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.5.10';
+const MODULE_VERSION = '1.5.11';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -1296,7 +1297,8 @@ var nqcArchive = (function(){
 
         var list = document.createElement('div');
         list.className = 'nqc-persona-list';
-        var rowEls = {};
+        var rowEls = [];
+        var refresh = null;
         options.forEach(function(opt){
             var row = document.createElement('button');
             row.type = 'button';
@@ -1340,7 +1342,7 @@ var nqcArchive = (function(){
                 chooseRow();
             });
             row.addEventListener('click', chooseRow);
-            rowEls[opt.key] = row;
+            rowEls.push(row);
             list.appendChild(row);
         });
         card.appendChild(list);
@@ -1396,19 +1398,22 @@ var nqcArchive = (function(){
                 for(var i = 0; i < options.length; i++){ if(options[i].key === selectedKey) return options[i]; }
                 return null;
             }
-            function refresh(){
+            refresh = function(){
                 var opt = selectedOption();
-                Object.keys(rowEls).forEach(function(key){
-                    rowEls[key].classList.toggle('is-sel', key === selectedKey);
-                    rowEls[key].classList.toggle('is-bound', !!(binding && binding.avatar === key));
-                });
+                var rowList = list.querySelectorAll('.nqc-persona-row');
+                for(var ri = 0; ri < rowList.length; ri++){
+                    var rowEl = rowList[ri];
+                    var key = rowEl.getAttribute('data-key');
+                    rowEl.classList.toggle('is-sel', key === selectedKey);
+                    rowEl.classList.toggle('is-bound', !!(binding && binding.avatar === key));
+                }
                 previewContent.textContent = opt ? (opt.description || '未填写设定内容') : '选择一个用户设定查看内容';
                 previewContent.classList.toggle('is-empty', !opt || !opt.description);
                 var isBound = !!(opt && binding && binding.avatar === opt.key);
                 primary.disabled = !opt || isBound;
                 primary.textContent = isBound ? '已绑定' : '绑定此设定';
                 unbind.style.display = binding ? '' : 'none';
-            }
+            };
             function bindSelected(){
                 var opt = selectedOption();
                 if(!opt) return;
