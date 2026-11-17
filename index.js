@@ -2602,6 +2602,7 @@ var nqcArchive = (function(){
         if(!orderEntry || !Array.isArray(orderEntry.order)) throw new Error('当前预设没有 Prompt 顺序');
         var order = orderEntry.order;
         var entries = plan.entries || {};
+        if(!order.length && Object.keys(entries).length) throw new Error('当前预设没有 Prompt 顺序');
         var changed = 0;
         order.forEach(function(item){
             if(!item || !Object.prototype.hasOwnProperty.call(entries, item.identifier)) return;
