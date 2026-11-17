@@ -48,6 +48,7 @@
  * v1.6.1 更新：统一黑白实色配色，新增右上角「黑白 / 主题」切换（跟随 CSS 主题且自动保证对比度）；
  *   修复手机端面板与世界书方案弹窗的横向溢出，窄屏方案胶囊自动换行。
  * v1.6.5 更新：弹窗用内联 !important 强制顶层、实色、居中与限宽，彻底覆盖主题的透明/层级规则。
+ * v1.6.6 更新：修复手机端方案弹窗首次点“保存”被键盘/焦点拦截的问题；条目渲染与搜索改为更轻量的批量处理。
  *
  * 纯前端扩展，不修改 SillyTavern 核心代码；禁用或删除本扩展即可完全移除。
  */
@@ -56,7 +57,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.6.5';
+const MODULE_VERSION = '1.7.0';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -308,7 +309,7 @@ function nqcForceModalLayer(modalEl, card, solidModalBg) {
     modalEl.style.setProperty('box-sizing', 'border-box', 'important');
     modalEl.style.setProperty('padding', '18px', 'important');
     modalEl.style.setProperty('overflow', 'hidden', 'important');
-    modalEl.style.setProperty('background', 'rgba(0, 0, 0, 0.34)', 'important');
+    modalEl.style.setProperty('background', 'rgba(0, 0, 0, 0.30)', 'important');
     modalEl.style.setProperty('opacity', '1', 'important');
     modalEl.style.setProperty('visibility', 'visible', 'important');
     modalEl.style.setProperty('pointer-events', 'auto', 'important');
@@ -318,8 +319,8 @@ function nqcForceModalLayer(modalEl, card, solidModalBg) {
     card.style.setProperty('display', 'flex', 'important');
     card.style.setProperty('flex-direction', 'column', 'important');
     card.style.setProperty('width', '100%', 'important');
-    card.style.setProperty('max-width', mobile ? 'min(390px, calc(100vw - 32px))' : '430px', 'important');
-    card.style.setProperty('max-height', mobile ? 'calc(100svh - 36px)' : 'min(76vh, 720px)', 'important');
+    card.style.setProperty('max-width', mobile ? 'min(390px, calc(100vw - 32px))' : '440px', 'important');
+    card.style.setProperty('max-height', mobile ? 'calc(100dvh - 36px)' : 'min(76vh, 720px)', 'important');
     card.style.setProperty('box-sizing', 'border-box', 'important');
     card.style.setProperty('overflow', 'hidden', 'important');
     card.style.setProperty('background', nqcColorCss(solidModalBg), 'important');
@@ -329,7 +330,7 @@ function nqcForceModalLayer(modalEl, card, solidModalBg) {
     card.style.setProperty('z-index', '1', 'important');
     card.style.setProperty('border', '0', 'important');
     card.style.setProperty('border-radius', '22px', 'important');
-    card.style.setProperty('padding', '16px', 'important');
+    card.style.setProperty('padding', mobile ? '16px 14px calc(14px + env(safe-area-inset-bottom))' : '18px 16px 16px', 'important');
 
     const list = card.querySelector('.nqc-wb-list');
     if (list) {
@@ -362,7 +363,7 @@ function applyAccentTheme() {
             nqcApplyAccentVars(panelEl, panelBg, panelEl.classList.contains('night'));
         }
 
-        const modalEl = document.getElementById('nqc-wb-modal');
+        const modalEl = document.getElementById('nqc-wb-modal') || document.getElementById('nqc-pp-modal');
         if (modalEl) {
             const card = modalEl.querySelector('.nqc-wb-card');
             let modalBg = card ? nqcParseColor(getComputedStyle(card).backgroundColor) : null;
@@ -421,7 +422,7 @@ function nqcToast(msg) {
    扩展重载时解绑旧事件、断开旧 Observer、清理定时器，不叠加、不卡顿。 */
 var nqcArchive = (function(){
     var MODULE_NAME = 'chat-archive-manager';
-    var MODULE_VERSION = '1.6.5';
+    var MODULE_VERSION = '1.7.0';
 
     /* ---------- 酒馆上下文桥接（防御式，取不到不拖垮主面板） ---------- */
     function getContext(){
@@ -453,6 +454,22 @@ var nqcArchive = (function(){
         }).catch(function(e){ console.warn('['+MODULE_NAME+'] world-info.js 桥接失败', e); return null; });
     }catch(e){ console.warn('['+MODULE_NAME+'] 世界书动态 import 不可用', e); }
 
+    // Chat Completion 预设的 PromptManager 同样按需加载：只在操作预设方案时使用
+    try{
+        presetModReady = import('../../../../scripts/openai.js').then(function(m){
+            if(m && m.oai_settings) presetMod = m;
+            return presetMod;
+        }).catch(function(e){ console.warn('['+MODULE_NAME+'] openai.js 桥接失败', e); return null; });
+    }catch(e){ console.warn('['+MODULE_NAME+'] openai 动态 import 不可用', e); }
+
+    // 预设切换需要 preset-manager 的 selectPreset；单独拿一份引用，避免依赖全局挂载
+    try{
+        presetMgrReady = import('../../../../scripts/preset-manager.js').then(function(m){
+            if(m && typeof m.getPresetManager === 'function') presetMgrMod = m;
+            return presetMgrMod;
+        }).catch(function(e){ console.warn('['+MODULE_NAME+'] preset-manager.js 桥接失败', e); return null; });
+    }catch(e){ console.warn('['+MODULE_NAME+'] preset-manager 动态 import 不可用', e); }
+
     /* ---------- 持久化设置（沿用独立版存储键，旧数据自动继承） ---------- */
     function rawSettings(){
         var c = getContext();
@@ -472,9 +489,12 @@ var nqcArchive = (function(){
         if(!es[MODULE_NAME].worldbookPlans) es[MODULE_NAME].worldbookPlans = {};
         if(!es[MODULE_NAME].worldbookActive) es[MODULE_NAME].worldbookActive = {};
         if(!es[MODULE_NAME].chatWorldbookBindings) es[MODULE_NAME].chatWorldbookBindings = {};
+        if(!es[MODULE_NAME].presetPlans) es[MODULE_NAME].presetPlans = {};
+        if(!es[MODULE_NAME].presetActive) es[MODULE_NAME].presetActive = {};
+        if(!es[MODULE_NAME].chatPresetBindings) es[MODULE_NAME].chatPresetBindings = {};
         return es[MODULE_NAME];
     }
-    var settings = getSettings() || { notes:{}, avatars:{}, pins:{}, favorites:{}, locks:{}, personaBindings:{}, worldbookPlans:{}, worldbookActive:{}, chatWorldbookBindings:{} };
+    var settings = getSettings() || { notes:{}, avatars:{}, pins:{}, favorites:{}, locks:{}, personaBindings:{}, worldbookPlans:{}, worldbookActive:{}, chatWorldbookBindings:{}, presetPlans:{}, presetActive:{}, chatPresetBindings:{} };
     var notes = settings.notes;
     var avatars = settings.avatars;
     var pins = settings.pins;
@@ -484,6 +504,9 @@ var nqcArchive = (function(){
     var worldbookPlans = settings.worldbookPlans;
     var worldbookActive = settings.worldbookActive;
     var chatWorldbookBindings = settings.chatWorldbookBindings;
+    var presetPlans = settings.presetPlans;
+    var presetActive = settings.presetActive;
+    var chatPresetBindings = settings.chatPresetBindings;
     // 桥接晚于模块执行就绪时，把就绪前写入的临时数据并回真实设置
     function ensureSettings(){
         var s = getSettings();
@@ -498,8 +521,12 @@ var nqcArchive = (function(){
             Object.keys(worldbookPlans).forEach(function(k){ if(!s.worldbookPlans[k]) s.worldbookPlans[k] = worldbookPlans[k]; });
             Object.keys(worldbookActive).forEach(function(k){ if(!s.worldbookActive[k]) s.worldbookActive[k] = worldbookActive[k]; });
             Object.keys(chatWorldbookBindings).forEach(function(k){ if(!s.chatWorldbookBindings[k]) s.chatWorldbookBindings[k] = chatWorldbookBindings[k]; });
+            Object.keys(presetPlans).forEach(function(k){ if(!s.presetPlans[k]) s.presetPlans[k] = presetPlans[k]; });
+            Object.keys(presetActive).forEach(function(k){ if(!s.presetActive[k]) s.presetActive[k] = presetActive[k]; });
+            Object.keys(chatPresetBindings).forEach(function(k){ if(!s.chatPresetBindings[k]) s.chatPresetBindings[k] = chatPresetBindings[k]; });
             settings = s; notes = s.notes; avatars = s.avatars; pins = s.pins; favorites = s.favorites; locks = s.locks; personaBindings = s.personaBindings;
             worldbookPlans = s.worldbookPlans; worldbookActive = s.worldbookActive; chatWorldbookBindings = s.chatWorldbookBindings;
+            presetPlans = s.presetPlans; presetActive = s.presetActive; chatPresetBindings = s.chatPresetBindings;
         }
         return true;
     }
@@ -542,6 +569,20 @@ var nqcArchive = (function(){
     var wbBarBound = false;
     var wiMod = null;
     var wiModReady = Promise.resolve();
+    var presetMod = null;
+    var presetModReady = Promise.resolve();
+    var presetMgrMod = null;
+    var presetMgrReady = Promise.resolve();
+    var ppBarEl = null;
+    var ppBarSig = '';
+    var ppModalEl = null;
+    var ppModalClose = null;
+    var ppPickerEl = null;
+    var ppPickerClose = null;
+    var ppApplyChain = Promise.resolve();
+    var ppBarBound = false;
+    var ppApplyTimer = null;
+    var ppApplying = false;
 
     var boundEvents = [];
     var timers = [];
@@ -562,6 +603,9 @@ var nqcArchive = (function(){
     var SVG_USER = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M5 19.4c0-3.4 3.1-5.6 7-5.6s7 2.2 7 5.6"/></svg>';
     var SVG_CHECK = '<svg viewBox="0 0 24 24"><path d="M4 12.5l5 5 11-11"/></svg>';
     var SVG_BOOK = '<svg viewBox="0 0 24 24"><path d="M5 4.5h11a2 2 0 0 1 2 2v13H7a2 2 0 0 1-2-2z"/><path d="M7 19.5h11"/><path d="M8.5 8h6M8.5 11h4.5"/></svg>';
+    var SVG_SLIDERS = '<svg viewBox="0 0 24 24"><path d="M4 7h8.5M17.5 7H20M4 17h3.5M12.5 17H20"/><circle cx="15" cy="7" r="2.2"/><circle cx="10" cy="17" r="2.2"/></svg>';
+    var SVG_PLUS = '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
+    var SVG_PENCIL = '<svg viewBox="0 0 24 24"><path d="M4.5 19.5l4.2-.9L19.3 8a1.8 1.8 0 0 0 0-2.5l-.8-.8a1.8 1.8 0 0 0-2.5 0L5.4 15.3z"/><path d="M14.8 6.2l3 3"/></svg>';
 
     /* ---------- 工具函数 ---------- */
     function noteKey(avatar, fileName){ return avatar + '::' + fileName; }
@@ -2064,6 +2108,10 @@ var nqcArchive = (function(){
         name.type = 'text';
         name.maxLength = 40;
         name.placeholder = '方案名称，例如：日常 / 战斗 / 过去篇';
+        name.autocomplete = 'off';
+        name.autocapitalize = 'off';
+        name.spellcheck = false;
+        name.enterKeyHint = 'done';
         var initialName = isEdit ? planNameOf(existing) : ('方案 ' + (plansForWorld(world).length + 1));
         name.value = initialName;
         name.setAttribute('value', initialName);
@@ -2084,14 +2132,24 @@ var nqcArchive = (function(){
             search.className = 'nqc-wb-search';
             search.type = 'search';
             search.placeholder = '搜索条目名称或关键词';
+            search.autocomplete = 'off';
+            search.autocapitalize = 'off';
+            search.spellcheck = false;
         }
         var list = document.createElement('div');
         list.className = 'nqc-wb-list';
+        var isCoarse = false;
+        try{
+            isCoarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        }catch(e){}
+        var frag = document.createDocumentFragment();
 
         function paintRow(row, uid){
             var on = !!state[uid];
+            var next = on ? '1' : '0';
+            if(row.dataset.on === next) return;
             row.classList.toggle('on', on);
-            row.dataset.on = on ? '1' : '0';
+            row.dataset.on = next;
             row.setAttribute('aria-pressed', on ? 'true' : 'false');
         }
         all.forEach(function(item){
@@ -2103,22 +2161,38 @@ var nqcArchive = (function(){
             mtext.className = 'nqc-wb-entrytext';
             var et = document.createElement('div');
             et.className = 'nqc-wb-entrytitle';
-            et.textContent = entryTitle(item.entry, item.uid);
             var ek = document.createElement('div');
             ek.className = 'nqc-wb-entrykey';
-            ek.textContent = entryKeysText(item.entry) || ('UID ' + item.uid);
+            var titleText = entryTitle(item.entry, item.uid);
+            var keyText = entryKeysText(item.entry);
+            et.textContent = titleText;
+            ek.textContent = keyText || ('UID ' + item.uid);
             mtext.appendChild(et); mtext.appendChild(ek);
             var sw = document.createElement('span');
             sw.className = 'nqc-wb-sw';
             sw.innerHTML = '<i></i>';
             row.appendChild(mtext); row.appendChild(sw);
-            row.dataset.search = ((entryTitle(item.entry, item.uid) + ' ' + entryKeysText(item.entry)).toLowerCase());
+            row.dataset.search = (titleText + ' ' + keyText + ' ' + item.uid).toLowerCase();
+            row.title = keyText ? (titleText + ' · ' + keyText) : titleText;
             paintRow(row, item.uid);
-            row.addEventListener('click', function(){
-                state[item.uid] = !state[item.uid];
-                paintRow(row, item.uid);
-            });
-            list.appendChild(row);
+            frag.appendChild(row);
+        });
+        list.appendChild(frag);
+
+        var empty = document.createElement('div');
+        empty.className = 'nqc-wb-listempty';
+        empty.textContent = '没有匹配的条目';
+        empty.style.display = 'none';
+        list.appendChild(empty);
+
+        // 条目点击交给列表统一处理，避免为每一行单独绑定事件。
+        list.addEventListener('click', function(ev){
+            var target = ev.target;
+            var row = target && target.closest ? target.closest('.nqc-wb-entry') : null;
+            if(!row || !list.contains(row)) return;
+            var uid = row.dataset.uid;
+            state[uid] = !state[uid];
+            paintRow(row, uid);
         });
 
         function setAll(on){
@@ -2133,11 +2207,23 @@ var nqcArchive = (function(){
             all.forEach(function(item){ state[item.uid] = !item.entry.disable; });
             Array.prototype.forEach.call(list.querySelectorAll('.nqc-wb-entry'), function(row){ paintRow(row, row.dataset.uid); });
         });
+        var searchRaf = 0;
+        function applySearchFilter(){
+            var q = search ? search.value.trim().toLowerCase() : '';
+            var visible = 0;
+            Array.prototype.forEach.call(list.querySelectorAll('.nqc-wb-entry'), function(row){
+                var show = !q || (row.dataset.search || '').indexOf(q) >= 0;
+                row.style.display = show ? '' : 'none';
+                if(show) visible++;
+            });
+            if(empty) empty.style.display = (q && !visible) ? 'flex' : 'none';
+        }
         if(search){
             search.addEventListener('input', function(){
-                var q = search.value.trim().toLowerCase();
-                Array.prototype.forEach.call(list.querySelectorAll('.nqc-wb-entry'), function(row){
-                    row.style.display = (!q || (row.dataset.search || '').indexOf(q) >= 0) ? '' : 'none';
+                if(searchRaf) cancelAnimationFrame(searchRaf);
+                searchRaf = requestAnimationFrame(function(){
+                    searchRaf = 0;
+                    applySearchFilter();
                 });
             });
         }
@@ -2178,11 +2264,42 @@ var nqcArchive = (function(){
         wbPlanModalEl = modal;
         // 弹窗刚入 DOM：按卡片实际底色重算一次实色强调，避免深色主题下按钮/开关发黑
         applyAccentTheme();
-        setTimeout(() => { try { applyAccentTheme(); } catch (e) { /* 忽略 */ } }, 0);
+        var vvHandler = null;
+        function syncViewportHeight(){
+            if(!modal.parentNode) return;
+            var vv = window.visualViewport;
+            var h = (vv && vv.height) ? vv.height : window.innerHeight;
+            if(!h) return;
+            h = Math.max(280, Math.round(h));
+            var top = (vv && vv.offsetTop) ? Math.max(0, Math.round(vv.offsetTop)) : 0;
+            modal.style.setProperty('top', top + 'px', 'important');
+            modal.style.setProperty('height', h + 'px', 'important');
+            if(window.innerWidth <= 560){
+                card.style.setProperty('max-height', Math.max(220, h - 36) + 'px', 'important');
+            }
+        }
+        syncViewportHeight();
+        setTimeout(() => {
+            try { applyAccentTheme(); syncViewportHeight(); } catch (e) { /* 忽略 */ }
+        }, 0);
+        if(window.visualViewport && typeof window.visualViewport.addEventListener === 'function'){
+            vvHandler = function(){ syncViewportHeight(); };
+            window.visualViewport.addEventListener('resize', vvHandler);
+            window.visualViewport.addEventListener('scroll', vvHandler);
+        }
 
         function close(){
             if(!modal.parentNode) return;
+            try{ if(modal.matches(':popover-open')) modal.hidePopover(); }catch(e){}
             try{ modal.parentNode.removeChild(modal); }catch(e){}
+            if(vvHandler && window.visualViewport){
+                try{
+                    window.visualViewport.removeEventListener('resize', vvHandler);
+                    window.visualViewport.removeEventListener('scroll', vvHandler);
+                }catch(e){}
+                vvHandler = null;
+            }
+            if(searchRaf) try{ cancelAnimationFrame(searchRaf); }catch(e){}
             document.removeEventListener('keydown', onKey, true);
             wbPlanModalEl = null; wbPlanModalClose = null;
         }
@@ -2191,10 +2308,11 @@ var nqcArchive = (function(){
         document.addEventListener('keydown', onKey, true);
         x.addEventListener('click', close);
         cancel.addEventListener('click', close);
-        modal.addEventListener('click', close);
+        modal.addEventListener('click', function(ev){ if(ev.target === modal) close(); });
 
         save.addEventListener('click', async function(){
             if(save.dataset.busy === '1') return;
+            try{ name.blur(); }catch(e){}
             var nm = String(name.value || '').trim().slice(0, 40) || ('方案 ' + (plansForWorld(world).length + 1));
             var entriesState = {};
             all.forEach(function(item){ entriesState[item.uid] = !!state[item.uid]; });
@@ -2230,7 +2348,17 @@ var nqcArchive = (function(){
                 nqcToast('方案已保存，但应用失败');
             }
         });
-        try{ name.focus(); name.select(); }catch(e){}
+        name.addEventListener('keydown', function(ev){
+            if(ev.key === 'Enter'){
+                ev.preventDefault();
+                try{ save.click(); }catch(e){}
+            }
+        });
+        // 手机端不要自动聚焦方案名：键盘会顶起弹窗并吞掉第一次“保存”点击。
+        // 桌面端保留自动选中名称的便利。
+        if(!isCoarse && window.innerWidth > 560){
+            try{ name.focus(); name.select(); }catch(e){}
+        }
     }
 
     function deleteWorldbookPlan(world, id){
@@ -2250,6 +2378,855 @@ var nqcArchive = (function(){
         if(!listEl) return;
         Array.prototype.forEach.call(listEl.querySelectorAll('.nqc-msg-wb'), function(btn){
             if(btn && btn.__nqcPaint) try{ btn.__nqcPaint(); }catch(e){}
+        });
+    }
+
+    /* ---------- 预设方案（Chat Completion / Prompt 开关） ---------- */
+    function ppSleep(ms){
+        return new Promise(function(resolve){ setTimeout(resolve, ms); });
+    }
+    function selectedPresetInfo(){
+        var sel = document.getElementById('settings_preset_openai');
+        if(!sel || sel.selectedIndex < 0) return null;
+        var opt = sel.options[sel.selectedIndex];
+        var name = opt ? String(opt.textContent || '').trim() : '';
+        if(!name) return null;
+        return { name: name, value: sel.value };
+    }
+    function plansForPreset(preset){
+        ensureSettings();
+        if(!preset) return [];
+        var arr = presetPlans[preset];
+        if(!Array.isArray(arr)){ arr = []; presetPlans[preset] = arr; }
+        return arr;
+    }
+    function allPresetPlans(){
+        ensureSettings();
+        var out = [];
+        Object.keys(presetPlans).forEach(function(preset){
+            var arr = presetPlans[preset];
+            if(!Array.isArray(arr)) return;
+            arr.forEach(function(p){
+                if(p && p.id){
+                    if(!p.preset) p.preset = preset;
+                    out.push(p);
+                }
+            });
+        });
+        out.sort(function(a, b){ return (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0); });
+        return out;
+    }
+    function presetPlanById(preset, id){
+        if(!preset || !id) return null;
+        var arr = presetPlans[preset];
+        if(!Array.isArray(arr)) return null;
+        for(var i=0;i<arr.length;i++){ if(arr[i] && arr[i].id === id) return arr[i]; }
+        return null;
+    }
+    function presetPlanName(plan){ return (plan && plan.name) ? plan.name : '未命名方案'; }
+    function presetPlanCounts(plan){
+        var on = 0, off = 0;
+        var entries = (plan && plan.entries) || {};
+        Object.keys(entries).forEach(function(id){ if(entries[id]) on++; else off++; });
+        return { on:on, off:off, total:on+off };
+    }
+    function presetOrderCharacter(pm){
+        if(pm && pm.activeCharacter) return pm.activeCharacter;
+        var dummy = 100001;
+        try{
+            var c = pm && pm.configuration && pm.configuration.promptOrder;
+            if(c && c.dummyId) dummy = c.dummyId;
+        }catch(e){}
+        return { id: dummy };
+    }
+    async function ensurePresetModule(){
+        var m = await presetModReady;
+        if(!m) return null;
+        if(!m.promptManager && typeof m.setupChatCompletionPromptManager === 'function'){
+            try{ m.setupChatCompletionPromptManager(m.oai_settings); }catch(e){ console.warn('[nqc-pp] PromptManager 初始化失败', e); }
+        }
+        return (m && m.promptManager) ? m : null;
+    }
+    async function readPromptEntries(){
+        var m = await ensurePresetModule();
+        var pm = m && m.promptManager;
+        if(!pm) throw new Error('预设模块未就绪');
+        var order = pm.getPromptOrderForCharacter(presetOrderCharacter(pm)) || [];
+        return order.map(function(item){
+            var p = null;
+            try{ p = pm.getPromptById(item.identifier); }catch(e){}
+            return {
+                identifier: item.identifier,
+                name: (p && p.name) ? String(p.name) : String(item.identifier),
+                enabled: !!item.enabled
+            };
+        });
+    }
+    function applyPresetPlan(plan, opts){
+        var run = ppApplyChain.then(function(){ return applyPresetPlanNow(plan, opts); });
+        ppApplyChain = run.catch(function(){});
+        return run;
+    }
+    async function applyPresetPlanNow(plan, opts){
+        if(!plan) throw new Error('方案无效');
+        var targetPreset = String(plan.preset || '').trim();
+        var info = selectedPresetInfo();
+        if(targetPreset && (!info || info.name !== targetPreset)){
+            var manager = null;
+            try{
+                var mgrMod = await presetMgrReady;
+                var c = getContext();
+                var gm = (mgrMod && mgrMod.getPresetManager) || window.getPresetManager || (c && c.getPresetManager);
+                manager = gm ? gm('openai') : null;
+            }catch(e){}
+            if(manager && typeof manager.findPreset === 'function' && typeof manager.selectPreset === 'function'){
+                var val = manager.findPreset(targetPreset);
+                if(val !== null && val !== undefined){
+                    try{
+                        manager.selectPreset(val);
+                        // 切换预设会重写 prompt_order，等一拍再写入方案开关
+                        await ppSleep(220);
+                    }catch(e){ console.warn('[nqc-pp] 切换预设失败', e); }
+                }
+            }
+        }
+        var m = await ensurePresetModule();
+        var pm = m && m.promptManager;
+        if(!pm) throw new Error('预设模块未就绪');
+        var order = pm.getPromptOrderForCharacter(presetOrderCharacter(pm)) || [];
+        var entries = plan.entries || {};
+        var changed = 0;
+        order.forEach(function(item){
+            if(!item || !Object.prototype.hasOwnProperty.call(entries, item.identifier)) return;
+            var want = !!entries[item.identifier];
+            if(!!item.enabled !== want){
+                item.enabled = want;
+                changed++;
+            }
+        });
+        if(changed){
+            try{ pm.render(false); }catch(e){}
+            try{ await Promise.race([pm.saveServiceSettings(), ppSleep(1100)]); }catch(e){ console.warn('[nqc-pp] 保存 Prompt 开关失败', e); }
+        }
+        return changed;
+    }
+
+    /* ---------- 预设界面里的方案条 ---------- */
+    function ensurePresetBar(){
+        var exist = document.getElementById('nqc-pp-bar');
+        if(exist){ ppBarEl = exist; return exist; }
+        var container = document.getElementById('completion_prompt_manager');
+        if(!container || !container.parentElement) return null;
+        var bar = document.createElement('div');
+        bar.id = 'nqc-pp-bar';
+        bar.className = 'nqc-pp-bar';
+
+        var head = document.createElement('div');
+        head.className = 'nqc-pp-head';
+        var text = document.createElement('div');
+        text.className = 'nqc-pp-headtext';
+        var title = document.createElement('div');
+        title.className = 'nqc-pp-title';
+        title.textContent = '预设方案';
+        var sub = document.createElement('div');
+        sub.className = 'nqc-pp-sub';
+        text.appendChild(title); text.appendChild(sub);
+
+        var actions = document.createElement('div');
+        actions.className = 'nqc-pp-actions';
+        var edit = document.createElement('button');
+        edit.type = 'button';
+        edit.className = 'nqc-pp-icon';
+        edit.innerHTML = SVG_PENCIL;
+        edit.setAttribute('aria-label', '编辑当前预设方案');
+        edit.title = '编辑当前预设方案';
+        var add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'nqc-pp-icon';
+        add.innerHTML = SVG_PLUS;
+        add.setAttribute('aria-label', '新建预设方案');
+        add.title = '新建预设方案';
+        actions.appendChild(edit); actions.appendChild(add);
+        head.appendChild(text); head.appendChild(actions);
+
+        var chips = document.createElement('div');
+        chips.className = 'nqc-pp-chips';
+
+        bar.appendChild(head); bar.appendChild(chips);
+        bar.__nqc = { sub: sub, chips: chips, edit: edit, add: add };
+        bar.addEventListener('click', function(ev){ ev.stopPropagation(); });
+        edit.addEventListener('click', function(){
+            var info = selectedPresetInfo();
+            if(!info) return;
+            var plan = presetPlanById(info.name, presetActive[info.name]);
+            if(!plan){
+                var arr = plansForPreset(info.name);
+                plan = arr.length ? arr[arr.length - 1] : null;
+            }
+            if(plan) openPresetPlanModal(plan);
+            else nqcToast('还没有方案，点右侧加号新建');
+        });
+        add.addEventListener('click', function(){
+            if(!selectedPresetInfo()){ nqcToast('请先选择一个 Chat Completion 预设'); return; }
+            openPresetPlanModal(null);
+        });
+        container.parentElement.insertBefore(bar, container);
+        ppBarEl = bar;
+        return bar;
+    }
+    function usePresetPlan(plan){
+        if(!plan) return;
+        var name = presetPlanName(plan);
+        applyPresetPlan(plan, { silent:true }).then(function(changed){
+            presetActive[plan.preset || (selectedPresetInfo() || {}).name] = plan.id;
+            saveSettings();
+            refreshPresetBar(true);
+            if(changed) nqcToast('已应用「' + name + '」（' + changed + ' 项调整）');
+            else nqcToast('已应用「' + name + '」');
+        }).catch(function(e){
+            console.error('[nqc-pp] 应用预设方案失败', e);
+            nqcToast('预设方案应用失败，请稍后再试');
+        });
+    }
+    function refreshPresetBar(force){
+        var bar = ensurePresetBar();
+        if(!bar) return;
+        var info = selectedPresetInfo();
+        var preset = info ? info.name : '';
+        var plans = info ? plansForPreset(preset) : [];
+        var activeId = presetActive[preset] || '';
+        var activePlan = activeId ? presetPlanById(preset, activeId) : null;
+        if(activeId && !activePlan){ delete presetActive[preset]; activeId = ''; }
+        var sig = preset + '|' + activeId + '|' + plans.map(function(p){
+            var c = presetPlanCounts(p);
+            return p.id + ':' + presetPlanName(p) + ':' + c.on + '/' + c.off + ':' + (Number(p.updatedAt) || 0);
+        }).join(',');
+        if(!force && sig === ppBarSig) return;
+        ppBarSig = sig;
+        var nq = bar.__nqc;
+        if(!nq) return;
+        var subText;
+        if(!info) subText = '先选择一个 Chat Completion 预设';
+        else if(!plans.length) subText = info.name + ' · 暂无方案';
+        else if(activePlan){
+            var ct = presetPlanCounts(activePlan);
+            subText = info.name + ' · 开 ' + ct.on + ' / 关 ' + ct.off;
+        }else subText = info.name + ' · ' + plans.length + ' 个方案';
+        nq.sub.textContent = subText;
+        nq.edit.disabled = !plans.length;
+        nq.edit.classList.toggle('is-off', !plans.length);
+        nq.add.disabled = !info;
+        nq.add.classList.toggle('is-off', !info);
+        nq.chips.textContent = '';
+        if(!info){
+            var empty0 = document.createElement('span');
+            empty0.className = 'nqc-pp-empty';
+            empty0.textContent = '选择预设后，可把不同 Prompt 开关存成方案';
+            nq.chips.appendChild(empty0);
+            return;
+        }
+        if(!plans.length){
+            var empty = document.createElement('span');
+            empty.className = 'nqc-pp-empty';
+            empty.textContent = '新建一个方案，把当前开关状态记下来';
+            nq.chips.appendChild(empty);
+            return;
+        }
+        var frag = document.createDocumentFragment();
+        plans.forEach(function(plan){
+            var c = presetPlanCounts(plan);
+            var chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'nqc-pp-chip' + ((activeId === plan.id) ? ' on' : '');
+            var nm = document.createElement('span');
+            nm.className = 'nqc-pp-chip-name';
+            nm.textContent = presetPlanName(plan);
+            var cnt = document.createElement('span');
+            cnt.className = 'nqc-pp-chip-count';
+            cnt.textContent = c.on + '/' + c.total;
+            chip.appendChild(nm); chip.appendChild(cnt);
+            chip.title = plan.preset + ' · 开 ' + c.on + ' / 关 ' + c.off;
+            chip.addEventListener('click', function(){ usePresetPlan(plan); });
+            frag.appendChild(chip);
+        });
+        nq.chips.appendChild(frag);
+    }
+
+    function deletePresetPlan(preset, id){
+        var arr = plansForPreset(preset);
+        for(var i=0;i<arr.length;i++){ if(arr[i] && arr[i].id === id){ arr.splice(i,1); break; } }
+        if(presetActive[preset] === id) delete presetActive[preset];
+        Object.keys(chatPresetBindings).forEach(function(k){
+            var b = chatPresetBindings[k];
+            if(b && b.preset === preset && b.planId === id) delete chatPresetBindings[k];
+        });
+        saveSettings();
+        refreshPresetBindingChips();
+    }
+
+
+    async function openPresetPlanModal(existing){
+        if(ppModalEl && ppModalClose) try{ ppModalClose(); }catch(e){}
+        var info = selectedPresetInfo();
+        if(!info){ nqcToast('请先选择一个 Chat Completion 预设'); return; }
+        var all;
+        try{
+            all = await readPromptEntries();
+        }catch(e){
+            console.warn('[nqc-pp] 读取 Prompt 条目失败', e);
+            nqcToast('预设模块还没就绪，请稍后再试');
+            return;
+        }
+        if(!all.length){ nqcToast('当前预设没有可用的 Prompt 条目'); return; }
+
+        var isEdit = !!(existing && existing.id);
+        var state = {};
+        all.forEach(function(item){
+            if(isEdit && existing.entries && Object.prototype.hasOwnProperty.call(existing.entries, item.identifier)){
+                state[item.identifier] = !!existing.entries[item.identifier];
+            }else{
+                state[item.identifier] = !!item.enabled;
+            }
+        });
+
+        var topHost = document.getElementById('nqc-wb-top');
+        if(!topHost){
+            topHost = document.createElement('div');
+            topHost.id = 'nqc-wb-top';
+            document.documentElement.appendChild(topHost);
+        }
+        var modal = document.createElement('div');
+        modal.id = 'nqc-pp-modal';
+        modal.className = 'nqc-wb-modal nqc-pp-modal';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        var card = document.createElement('div');
+        card.className = 'nqc-wb-card';
+        card.addEventListener('click', function(ev){ ev.stopPropagation(); });
+
+        var head = document.createElement('div');
+        head.className = 'nqc-wb-cardhead';
+        var htext = document.createElement('div');
+        var htitle = document.createElement('div');
+        htitle.className = 'nqc-wb-cardtitle';
+        htitle.textContent = isEdit ? '编辑预设方案' : '新建预设方案';
+        var hsub = document.createElement('div');
+        hsub.className = 'nqc-wb-cardsub';
+        hsub.textContent = info.name + ' · ' + all.length + ' 个 Prompt';
+        htext.appendChild(htitle); htext.appendChild(hsub);
+        head.appendChild(htext);
+        var x = document.createElement('button');
+        x.type = 'button'; x.className = 'nqc-wb-x'; x.setAttribute('aria-label', '关闭');
+        x.innerHTML = '&times;';
+        head.appendChild(x);
+
+        var name = document.createElement('input');
+        name.className = 'nqc-wb-name';
+        name.type = 'text';
+        name.maxLength = 40;
+        name.placeholder = '方案名称，例如：日常 / 剧情 / 战斗';
+        name.autocomplete = 'off';
+        name.autocapitalize = 'off';
+        name.spellcheck = false;
+        name.enterKeyHint = 'done';
+        var initialName = isEdit ? presetPlanName(existing) : ('方案 ' + (plansForPreset(info.name).length + 1));
+        name.value = initialName;
+        name.setAttribute('value', initialName);
+
+        var tools = document.createElement('div');
+        tools.className = 'nqc-wb-tools';
+        var toolLabel = document.createElement('span');
+        toolLabel.className = 'nqc-wb-tool-label';
+        toolLabel.textContent = 'Prompt 开关';
+        var allOn = document.createElement('button'); allOn.type='button'; allOn.className='nqc-wb-mini'; allOn.textContent='全开';
+        var allOff = document.createElement('button'); allOff.type='button'; allOff.className='nqc-wb-mini'; allOff.textContent='全关';
+        var current = document.createElement('button'); current.type='button'; current.className='nqc-wb-mini'; current.textContent='读取当前';
+        tools.appendChild(toolLabel); tools.appendChild(allOn); tools.appendChild(allOff); tools.appendChild(current);
+
+        var search = null;
+        if(all.length > 10){
+            search = document.createElement('input');
+            search.className = 'nqc-wb-search';
+            search.type = 'search';
+            search.placeholder = '搜索 Prompt 名称或标识';
+            search.autocomplete = 'off';
+            search.autocapitalize = 'off';
+            search.spellcheck = false;
+        }
+
+        var list = document.createElement('div');
+        list.className = 'nqc-wb-list';
+        var isCoarse = false;
+        try{ isCoarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches; }catch(e){}
+        var frag = document.createDocumentFragment();
+
+        function paintRow(row, identifier){
+            var on = !!state[identifier];
+            var next = on ? '1' : '0';
+            if(row.dataset.on === next) return;
+            row.classList.toggle('on', on);
+            row.dataset.on = next;
+            row.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+
+        all.forEach(function(item){
+            var row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'nqc-wb-entry';
+            row.dataset.id = item.identifier;
+            var mtext = document.createElement('div');
+            mtext.className = 'nqc-wb-entrytext';
+            var et = document.createElement('div');
+            et.className = 'nqc-wb-entrytitle';
+            var ek = document.createElement('div');
+            ek.className = 'nqc-wb-entrykey';
+            et.textContent = item.name;
+            ek.textContent = item.identifier;
+            mtext.appendChild(et); mtext.appendChild(ek);
+            var sw = document.createElement('span');
+            sw.className = 'nqc-wb-sw';
+            sw.innerHTML = '<i></i>';
+            row.appendChild(mtext); row.appendChild(sw);
+            row.dataset.search = (item.name + ' ' + item.identifier).toLowerCase();
+            row.title = item.name + ' · ' + item.identifier;
+            paintRow(row, item.identifier);
+            frag.appendChild(row);
+        });
+        list.appendChild(frag);
+
+        var empty = document.createElement('div');
+        empty.className = 'nqc-wb-listempty';
+        empty.textContent = '没有匹配的 Prompt';
+        empty.style.display = 'none';
+        list.appendChild(empty);
+
+        list.addEventListener('click', function(ev){
+            var target = ev.target;
+            var row = target && target.closest ? target.closest('.nqc-wb-entry') : null;
+            if(!row || !list.contains(row)) return;
+            var id = row.dataset.id;
+            state[id] = !state[id];
+            paintRow(row, id);
+        });
+
+        function applySearchFilter(){
+            var q = search ? search.value.trim().toLowerCase() : '';
+            var visible = 0;
+            Array.prototype.forEach.call(list.querySelectorAll('.nqc-wb-entry'), function(row){
+                var show = !q || (row.dataset.search || '').indexOf(q) >= 0;
+                row.style.display = show ? '' : 'none';
+                if(show) visible++;
+            });
+            empty.style.display = (q && !visible) ? 'flex' : 'none';
+        }
+        var searchRaf = 0;
+        if(search){
+            search.addEventListener('input', function(){
+                if(searchRaf) cancelAnimationFrame(searchRaf);
+                searchRaf = requestAnimationFrame(function(){
+                    searchRaf = 0;
+                    applySearchFilter();
+                });
+            });
+        }
+
+        function setAll(on){
+            all.forEach(function(item){ state[item.identifier] = on; });
+            Array.prototype.forEach.call(list.querySelectorAll('.nqc-wb-entry'), function(row){ paintRow(row, row.dataset.id); });
+        }
+        allOn.addEventListener('click', function(){ setAll(true); });
+        allOff.addEventListener('click', function(){ setAll(false); });
+        current.addEventListener('click', async function(){
+            try{
+                var now = await readPromptEntries();
+                now.forEach(function(item){ state[item.identifier] = !!item.enabled; });
+                Array.prototype.forEach.call(list.querySelectorAll('.nqc-wb-entry'), function(row){ paintRow(row, row.dataset.id); });
+                nqcToast('已读取当前开关');
+            }catch(e){ nqcToast('读取当前开关失败'); }
+        });
+
+        var foot = document.createElement('div');
+        foot.className = 'nqc-wb-foot';
+        var left = document.createElement('div');
+        left.className = 'nqc-wb-footleft';
+        var del = null;
+        if(isEdit){
+            del = document.createElement('button');
+            del.type = 'button'; del.className = 'nqc-wb-del'; del.textContent = '删除方案';
+            del.addEventListener('click', function(){
+                if(del.dataset.armed !== '1'){
+                    del.dataset.armed = '1';
+                    del.textContent = '再点一次删除';
+                    del.classList.add('armed');
+                    setTimeout(function(){ if(del){ del.dataset.armed=''; del.textContent='删除方案'; del.classList.remove('armed'); } }, 2400);
+                    return;
+                }
+                deletePresetPlan(info.name, existing.id);
+                close();
+                refreshPresetBar(true);
+                nqcToast('已删除方案');
+            });
+            left.appendChild(del);
+        }
+        var cancel = document.createElement('button');
+        cancel.type = 'button'; cancel.className = 'nqc-wb-btn ghost'; cancel.textContent = '取消';
+        var save = document.createElement('button');
+        save.type = 'button'; save.className = 'nqc-wb-btn primary'; save.textContent = '保存并应用';
+        foot.appendChild(left); foot.appendChild(cancel); foot.appendChild(save);
+
+        card.appendChild(head); card.appendChild(name);
+        if(search) card.appendChild(search);
+        card.appendChild(tools); card.appendChild(list); card.appendChild(foot);
+        modal.appendChild(card); topHost.appendChild(modal);
+        ppModalEl = modal;
+        try{ applyAccentTheme(); }catch(e){}
+        var vvHandler = null;
+        function syncViewportHeight(){
+            if(!modal.parentNode) return;
+            var vv = window.visualViewport;
+            var h = (vv && vv.height) ? vv.height : window.innerHeight;
+            if(!h) return;
+            h = Math.max(280, Math.round(h));
+            var top = (vv && vv.offsetTop) ? Math.max(0, Math.round(vv.offsetTop)) : 0;
+            modal.style.setProperty('top', top + 'px', 'important');
+            modal.style.setProperty('height', h + 'px', 'important');
+            if(window.innerWidth <= 560){
+                card.style.setProperty('max-height', Math.max(220, h - 36) + 'px', 'important');
+            }
+        }
+        syncViewportHeight();
+        setTimeout(function(){ try{ applyAccentTheme(); syncViewportHeight(); }catch(e){} }, 0);
+        if(window.visualViewport && typeof window.visualViewport.addEventListener === 'function'){
+            vvHandler = function(){ syncViewportHeight(); };
+            window.visualViewport.addEventListener('resize', vvHandler);
+            window.visualViewport.addEventListener('scroll', vvHandler);
+        }
+
+        function close(){
+            if(!modal.parentNode) return;
+            try{ if(modal.matches(':popover-open')) modal.hidePopover(); }catch(e){}
+            try{ modal.parentNode.removeChild(modal); }catch(e){}
+            if(vvHandler && window.visualViewport){
+                try{
+                    window.visualViewport.removeEventListener('resize', vvHandler);
+                    window.visualViewport.removeEventListener('scroll', vvHandler);
+                }catch(e){}
+                vvHandler = null;
+            }
+            if(searchRaf) try{ cancelAnimationFrame(searchRaf); }catch(e){}
+            document.removeEventListener('keydown', onKey, true);
+            ppModalEl = null; ppModalClose = null;
+        }
+        function onKey(ev){ if(ev.key === 'Escape'){ ev.preventDefault(); close(); } }
+        ppModalClose = close;
+        document.addEventListener('keydown', onKey, true);
+        x.addEventListener('click', close);
+        cancel.addEventListener('click', close);
+        modal.addEventListener('click', function(ev){ if(ev.target === modal) close(); });
+
+        save.addEventListener('click', async function(){
+            if(save.dataset.busy === '1') return;
+            try{ name.blur(); }catch(e){}
+            var nm = String(name.value || '').trim().slice(0, 40) || ('方案 ' + (plansForPreset(info.name).length + 1));
+            var entriesState = {};
+            all.forEach(function(item){ entriesState[item.identifier] = !!state[item.identifier]; });
+            var plan;
+            if(isEdit){
+                plan = existing;
+                plan.name = nm;
+                plan.entries = entriesState;
+                plan.preset = info.name;
+                plan.presetValue = info.value;
+                plan.updatedAt = Date.now();
+            }else{
+                plan = {
+                    id: 'pp_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7),
+                    preset: info.name,
+                    presetValue: info.value,
+                    name: nm,
+                    entries: entriesState,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now()
+                };
+                plansForPreset(info.name).push(plan);
+            }
+            presetActive[info.name] = plan.id;
+            saveSettings();
+            save.dataset.busy = '1'; save.disabled = true; save.textContent = '应用中…';
+            try{
+                var changed = await applyPresetPlan(plan, { silent:true });
+                close();
+                refreshPresetBar(true);
+                nqcToast('已保存并应用「' + presetPlanName(plan) + '」' + (changed ? '（' + changed + ' 项调整）' : ''));
+            }catch(e){
+                console.error('[nqc-pp] 保存方案后应用失败', e);
+                close();
+                refreshPresetBar(true);
+                nqcToast('方案已保存，但应用失败');
+            }
+        });
+        name.addEventListener('keydown', function(ev){
+            if(ev.key === 'Enter'){
+                ev.preventDefault();
+                try{ save.click(); }catch(e){}
+            }
+        });
+        if(!isCoarse && window.innerWidth > 560){
+            try{ name.focus(); name.select(); }catch(e){}
+        }
+    }
+
+    function refreshPresetBindingChips(){
+        if(!listEl) return;
+        Array.prototype.forEach.call(listEl.querySelectorAll('.nqc-msg-pp'), function(btn){
+            if(btn && btn.__nqcPaint) try{ btn.__nqcPaint(); }catch(e){}
+        });
+    }
+    function presetBindingFor(avatar, fileName){
+        ensureSettings();
+        return chatPresetBindings[noteKey(avatar, fileName)] || null;
+    }
+    function buildPresetBindButton(avatar, chat){
+        var fileName = chat.file_name;
+        var k = noteKey(avatar, fileName);
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'nqc-msg-wb nqc-msg-pp';
+        function paint(){
+            ensureSettings();
+            var b = chatPresetBindings[k];
+            var plan = b ? presetPlanById(b.preset, b.planId) : null;
+            var on = !!(b && plan);
+            var label = on ? presetPlanName(plan) : (b ? '方案已失效' : '预设方案');
+            btn.classList.toggle('on', on);
+            btn.innerHTML = SVG_SLIDERS + '<span class="nqc-msg-wb-name"></span>';
+            btn.querySelector('.nqc-msg-wb-name').textContent = label;
+            btn.title = on
+                ? ('已关联预设方案「' + presetPlanName(plan) + '」（' + plan.preset + '）；打开此存档时自动应用')
+                : (allPresetPlans().length ? '为此存档关联预设方案' : '还没有预设方案，请先到预设界面创建');
+            btn.setAttribute('aria-label', on ? ('已关联预设方案 ' + presetPlanName(plan) + '，点击管理') : '关联预设方案');
+            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+        btn.addEventListener('click', async function(ev){
+            ev.stopPropagation();
+            ensureSettings();
+            var all = allPresetPlans();
+            if(!all.length){ nqcToast('请先到预设界面新建一个预设方案'); return; }
+            var b = chatPresetBindings[k];
+            if(!(b && presetPlanById(b.preset, b.planId)) && all.length === 1){
+                await bindPresetPlan(avatar, fileName, all[0], btn);
+                return;
+            }
+            openPresetPicker(avatar, fileName, btn);
+        });
+        btn.__nqcPaint = paint;
+        paint();
+        return btn;
+    }
+    async function bindPresetPlan(avatar, fileName, plan, chip){
+        var k = noteKey(avatar, fileName);
+        chatPresetBindings[k] = { preset: plan.preset, planId: plan.id, name: presetPlanName(plan) };
+        saveSettings();
+        if(chip && chip.__nqcPaint) chip.__nqcPaint();
+        var current = isCurrentChat(avatar, fileName);
+        if(current){
+            try{
+                var changed = await applyPresetPlan(plan, { silent:true });
+                presetActive[plan.preset] = plan.id;
+                saveSettings();
+                refreshPresetBar(true);
+                nqcToast('已关联并应用「' + presetPlanName(plan) + '」' + (changed ? '（' + changed + ' 项调整）' : ''));
+            }catch(e){
+                console.error('[nqc-pp] 关联方案应用失败', e);
+                nqcToast('已关联，但当前预设应用失败');
+            }
+        }else{
+            nqcToast('已关联「' + presetPlanName(plan) + '」，打开此存档时自动应用');
+        }
+    }
+    function openPresetPicker(avatar, fileName, chip){
+        if(ppPickerEl) try{ ppPickerClose(); }catch(e){}
+        var k = noteKey(avatar, fileName);
+        var all = allPresetPlans();
+        if(!all.length){ nqcToast('还没有预设方案，请先到预设界面创建'); return; }
+        var binding = chatPresetBindings[k];
+        var selectedId = binding && presetPlanById(binding.preset, binding.planId) ? (binding.preset + '::' + binding.planId) : (all[0].preset + '::' + all[0].id);
+
+        var host = document.getElementById('nqc-panel') || panelEl || document.body;
+        var modal = document.createElement('div');
+        modal.className = 'nqc-modal nqc-persona-modal nqc-wb-picker';
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        var card = document.createElement('div');
+        card.className = 'nqc-persona-card';
+        card.addEventListener('click', function(ev){ ev.stopPropagation(); });
+        var head = document.createElement('div');
+        head.className = 'nqc-persona-head';
+        var htext = document.createElement('div');
+        htext.className = 'nqc-persona-headtext';
+        var title = document.createElement('div');
+        title.className = 'nqc-persona-title';
+        title.textContent = '关联预设方案';
+        var sub = document.createElement('div');
+        sub.className = 'nqc-persona-sub';
+        sub.textContent = '打开此存档时，自动切换预设并应用开关方案';
+        htext.appendChild(title); htext.appendChild(sub);
+        head.appendChild(htext);
+        var x = document.createElement('button');
+        x.type='button'; x.className='nqc-persona-close'; x.setAttribute('aria-label','关闭'); x.innerHTML='&times;';
+        head.appendChild(x);
+
+        var list = document.createElement('div');
+        list.className = 'nqc-persona-list';
+        var rowEls = [];
+        all.forEach(function(plan){
+            var key = plan.preset + '::' + plan.id;
+            var row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'nqc-persona-row nqc-wb-plan-row';
+            row.dataset.key = key;
+            var ico = document.createElement('span');
+            ico.className = 'nqc-wb-plan-ico';
+            ico.innerHTML = SVG_SLIDERS;
+            var txt = document.createElement('span');
+            txt.className = 'nqc-wb-plan-text';
+            var nm = document.createElement('span');
+            nm.className = 'nqc-wb-plan-name';
+            nm.textContent = presetPlanName(plan);
+            var ds = document.createElement('span');
+            ds.className = 'nqc-wb-plan-desc';
+            var counts = presetPlanCounts(plan);
+            ds.textContent = plan.preset + ' · 开 ' + counts.on + ' / 关 ' + counts.off;
+            txt.appendChild(nm); txt.appendChild(ds);
+            var check = document.createElement('span');
+            check.className = 'nqc-persona-check';
+            check.innerHTML = SVG_CHECK;
+            row.appendChild(ico); row.appendChild(txt); row.appendChild(check);
+            row.addEventListener('click', function(){ pick(key); });
+            rowEls.push({ key:key, row:row, plan:plan });
+            list.appendChild(row);
+        });
+        function pick(key){
+            selectedId = key;
+            rowEls.forEach(function(item){ item.row.classList.toggle('is-sel', item.key === key); });
+        }
+        function selectedPlan(){
+            for(var i=0;i<rowEls.length;i++){ if(rowEls[i].key === selectedId) return rowEls[i].plan; }
+            return null;
+        }
+        var actions = document.createElement('div');
+        actions.className = 'nqc-persona-actions';
+        var unbind = document.createElement('button');
+        unbind.type='button'; unbind.className='nqc-persona-unbind';
+        unbind.textContent='解除关联';
+        unbind.style.display = binding ? '' : 'none';
+        var cancel = document.createElement('button');
+        cancel.type='button'; cancel.className='nqc-persona-btn cancel'; cancel.textContent='取消';
+        var primary = document.createElement('button');
+        primary.type='button'; primary.className='nqc-persona-btn primary'; primary.textContent='关联此方案';
+        actions.appendChild(unbind); actions.appendChild(cancel); actions.appendChild(primary);
+
+        card.appendChild(head); card.appendChild(list); card.appendChild(actions);
+        modal.appendChild(card); host.appendChild(modal);
+        ppPickerEl = modal;
+        pick(selectedId);
+
+        primary.addEventListener('click', async function(){
+            var plan = selectedPlan();
+            if(!plan) return;
+            primary.disabled = true; primary.textContent = '关联中…';
+            await bindPresetPlan(avatar, fileName, plan, chip);
+            close();
+        });
+        cancel.addEventListener('click', close);
+        x.addEventListener('click', close);
+        unbind.addEventListener('click', function(){
+            if(chatPresetBindings[k]){
+                delete chatPresetBindings[k];
+                saveSettings();
+                if(chip && chip.__nqcPaint) chip.__nqcPaint();
+                nqcToast('已解除预设方案关联');
+            }
+            close();
+        });
+        modal.addEventListener('click', function(ev){ if(ev.target === modal) close(); });
+        function close(){
+            if(!modal.parentNode) return;
+            try{ modal.parentNode.removeChild(modal); }catch(e){}
+            document.removeEventListener('keydown', onKey, true);
+            ppPickerEl = null; ppPickerClose = null;
+        }
+        function onKey(ev){ if(ev.key === 'Escape'){ ev.preventDefault(); close(); } }
+        ppPickerClose = close;
+        document.addEventListener('keydown', onKey, true);
+    }
+
+    function currentPresetBindingKey(){
+        var c = getContext();
+        if(!c || c.groupId || !c.chatId) return null;
+        var chars = c.characters || [];
+        var idx = Number(c.characterId);
+        var ch = chars[idx];
+        if(!ch || !ch.avatar) return null;
+        return noteKey(ch.avatar, stripJsonl(String(c.chatId)) + '.jsonl');
+    }
+    async function applyPresetBinding(avatar, fileName, opts){
+        if(ppApplying) return 0;
+        ensureSettings();
+        var k = (avatar && fileName) ? noteKey(avatar, fileName) : currentPresetBindingKey();
+        if(!k) return 0;
+        var b = chatPresetBindings[k];
+        if(!b) return 0;
+        var plan = presetPlanById(b.preset, b.planId);
+        if(!plan) return 0;
+        ppApplying = true;
+        try{
+            var changed = await applyPresetPlan(plan, { silent:true });
+            presetActive[b.preset] = b.planId;
+            saveSettings();
+            refreshPresetBar(true);
+            if(changed && !(opts && opts.silent)) nqcToast('已应用预设方案「' + presetPlanName(plan) + '」');
+            return changed;
+        }catch(e){
+            console.warn('[nqc-pp] 自动应用预设方案失败', e);
+            if(!(opts && opts.silent)) nqcToast('预设方案应用失败');
+            return 0;
+        }finally{
+            ppApplying = false;
+        }
+    }
+    function schedulePresetApply(){
+        if(ppApplyTimer){ clearTimeout(ppApplyTimer); ppApplyTimer = null; }
+        ppApplyTimer = arcTimeout(function(){
+            ppApplyTimer = null;
+            if(ppApplying) return;
+            var key = currentPresetBindingKey();
+            if(!key) return;
+            var b = chatPresetBindings[key];
+            if(!b) return;
+            var plan = presetPlanById(b.preset, b.planId);
+            if(!plan) return;
+            applyPresetPlan(plan, { silent:true }).then(function(){
+                presetActive[b.preset] = b.planId;
+                saveSettings();
+                refreshPresetBar(true);
+            }).catch(function(e){
+                console.warn('[nqc-pp] 自动应用预设方案失败', e);
+            });
+        }, 220);
+    }
+    function initPresetPlans(){
+        try{ ensurePresetBar(); refreshPresetBar(true); }catch(e){}
+        if(!ppBarBound){
+            ppBarBound = true;
+            try{
+                var sel = document.getElementById('settings_preset_openai');
+                if(sel) sel.addEventListener('change', function(){ setTimeout(function(){ refreshPresetBar(true); }, 120); });
+                onEvent('SETTINGS_UPDATED', function(){ setTimeout(function(){ refreshPresetBar(true); }, 120); });
+            }catch(e){}
+        }
+        [400, 1200, 2600].forEach(function(ms){
+            arcTimeout(function(){ try{ refreshPresetBar(true); }catch(e){} }, ms);
         });
     }
 
@@ -2614,6 +3591,7 @@ var nqcArchive = (function(){
         sub.appendChild(meta);
         sub.appendChild(buildPersonaBindButton(avatar, chat));
         sub.appendChild(buildWorldbookBindButton(avatar, chat));
+        sub.appendChild(buildPresetBindButton(avatar, chat));
 
         var preview = document.createElement('div');
         preview.className = 'nqc-msg-pv';
@@ -2756,6 +3734,7 @@ var nqcArchive = (function(){
             applyAvatarForCurrentChat();
             await applyPersonaBinding(avatar, fileName);
             await applyWorldbookBinding(avatar, fileName, { silent:true });
+            await applyPresetBinding(avatar, fileName, { silent:true });
             nqcToast('已加载存档');
         }catch(e){
             console.error('['+MODULE_NAME+'] 加载存档失败:', e);
@@ -3188,6 +4167,7 @@ var nqcArchive = (function(){
             updateCurrentBadges();
             applyAvatarForCurrentChat();
             scheduleWorldbookApply();
+            schedulePresetApply();
         });
         onEvent('CHARACTER_MESSAGE_RENDERED', onMessageRendered);
         onEvent('MESSAGE_UPDATED', onMessageRendered);
@@ -3196,13 +4176,16 @@ var nqcArchive = (function(){
             if(switching || deleting) return;
             applyAvatarForCurrentChat();
             scheduleWorldbookApply();
+            schedulePresetApply();
         });
 
         applyAvatarForCurrentChat();
         try{ initWorldbookPlans(); }catch(e){ console.warn('[nqc-wb] 方案条初始化失败', e); }
+        try{ initPresetPlans(); }catch(e){ console.warn('[nqc-pp] 预设方案初始化失败', e); }
         // 酒馆自动恢复上次聊天可能早于本模块激活，延迟补几次（一次性、非轮询）
         [300, 1000, 2500, 5000].forEach(function(ms){ arcTimeout(function(){ applyAvatarForCurrentChat(); }, ms); });
         [500, 1500, 3500].forEach(function(ms){ arcTimeout(function(){ if(!switching && !deleting) scheduleWorldbookApply(); }, ms); });
+        [700, 1800, 3800].forEach(function(ms){ arcTimeout(function(){ if(!switching && !deleting) schedulePresetApply(); }, ms); });
         ensureChatObserver();
         window.__nqcArchiveMod = mod;
         try{ console.log('[nqc-arc] 聊天存档管理器已并入快捷指令面板 v'+MODULE_VERSION); }catch(e){}
