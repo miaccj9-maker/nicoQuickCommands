@@ -57,7 +57,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.7.1';
+const MODULE_VERSION = '1.7.2';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -385,6 +385,38 @@ function applyAccentTheme() {
     } catch (e) {
         // 配色只是视觉增强，任何主题差异都不应影响面板功能
     }
+    // 自身写入会改动主题变量，短暂静默期避免 MutationObserver 自触发空转
+    nqcAccentQuietUntil = Date.now() + 100;
+}
+
+/* 主题重算合并到下一帧：夜间切换 / 主题变量变动可能连续触发多次，
+   合并后只读一次计算样式、只写一轮变量，避免切换时反复重排卡顿 */
+var nqcAccentRaf = 0;
+var nqcAccentQuietUntil = 0;
+function scheduleAccentTheme() {
+    if (nqcAccentRaf) return;
+    if (Date.now() < nqcAccentQuietUntil) return;
+    nqcAccentRaf = requestAnimationFrame(function () {
+        nqcAccentRaf = 0;
+        applyAccentTheme();
+    });
+}
+
+/* 只在“跟随主题”模式下监听主题变量；黑白模式下不做任何监听，零额外开销 */
+var nqcThemeObserver = null;
+function syncThemeObserver() {
+    try {
+        if (nqcThemeObserver) {
+            nqcThemeObserver.disconnect();
+            nqcThemeObserver = null;
+        }
+        if (settings.accentMode !== 'theme') return;
+        nqcThemeObserver = new MutationObserver(scheduleAccentTheme);
+        nqcThemeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+        if (document.body) {
+            nqcThemeObserver.observe(document.body, { attributes: true, attributeFilter: ['class', 'style'] });
+        }
+    } catch (e) { /* 忽略 */ }
 }
 
 // 手势状态
@@ -422,7 +454,7 @@ function nqcToast(msg) {
    扩展重载时解绑旧事件、断开旧 Observer、清理定时器，不叠加、不卡顿。 */
 var nqcArchive = (function(){
     var MODULE_NAME = 'chat-archive-manager';
-    var MODULE_VERSION = '1.7.1';
+    var MODULE_VERSION = '1.7.2';
 
     /* ---------- 酒馆上下文桥接（防御式，取不到不拖垮主面板） ---------- */
     function getContext(){
@@ -2698,18 +2730,30 @@ var nqcArchive = (function(){
         ppBarEl = bar;
         return bar;
     }
-    function usePresetPlan(plan){
+    function usePresetPlan(plan, chip){
         if(!plan) return;
+        if(chip && chip.dataset.busy === '1') return;
+        if(chip){
+            chip.dataset.busy = '1';
+            chip.classList.add('busy');
+            chip.setAttribute('aria-busy', 'true');
+        }
         var name = presetPlanName(plan);
         applyPresetPlan(plan, { silent:true }).then(function(changed){
             presetActive[plan.preset || (selectedPresetInfo() || {}).name] = plan.id;
             saveSettings();
-            refreshPresetBar(true);
+            refreshPresetBar(false);
             if(changed) nqcToast('已应用「' + name + '」（' + changed + ' 项调整）');
             else nqcToast('已应用「' + name + '」');
         }).catch(function(e){
             console.error('[nqc-pp] 应用预设方案失败', e);
             nqcToast('预设方案应用失败，请稍后再试');
+        }).then(function(){
+            if(chip){
+                chip.dataset.busy = '';
+                chip.classList.remove('busy');
+                chip.removeAttribute('aria-busy');
+            }
         });
     }
     function refreshPresetBar(force){
@@ -2770,7 +2814,7 @@ var nqcArchive = (function(){
             cnt.textContent = c.on + '/' + c.total;
             chip.appendChild(nm); chip.appendChild(cnt);
             chip.title = plan.preset + ' · 开 ' + c.on + ' / 关 ' + c.off;
-            chip.addEventListener('click', function(){ usePresetPlan(plan); });
+            chip.addEventListener('click', function(){ usePresetPlan(plan, chip); });
             frag.appendChild(chip);
         });
         nq.chips.appendChild(frag);
@@ -3345,18 +3389,18 @@ var nqcArchive = (function(){
             ppBarBound = true;
             try{
                 var sel = document.getElementById('settings_preset_openai');
-                if(sel) sel.addEventListener('change', function(){ setTimeout(function(){ refreshPresetBar(true); }, 120); });
-                onEvent('SETTINGS_UPDATED', function(){ setTimeout(function(){ refreshPresetBar(true); }, 120); });
+                if(sel) sel.addEventListener('change', function(){ setTimeout(function(){ refreshPresetBar(false); }, 120); });
+                onEvent('SETTINGS_UPDATED', function(){ setTimeout(function(){ refreshPresetBar(false); }, 120); });
                 // 设置面板/预设清单晚于扩展就绪时，等 APP_READY 再补一次
                 onEvent('APP_READY', function(){
                     [0, 400, 1200].forEach(function(ms){
-                        arcTimeout(function(){ try{ refreshPresetBar(true); }catch(e){} }, ms);
+                        arcTimeout(function(){ try{ refreshPresetBar(false); }catch(e){} }, ms);
                     });
                 });
             }catch(e){}
         }
         [400, 1200, 2600, 5200].forEach(function(ms){
-            arcTimeout(function(){ try{ refreshPresetBar(true); }catch(e){} }, ms);
+            arcTimeout(function(){ try{ refreshPresetBar(false); }catch(e){} }, ms);
         });
     }
 
@@ -3603,13 +3647,13 @@ var nqcArchive = (function(){
         wbBarBound = true;
         try{
             var sel = document.getElementById('world_editor_select');
-            if(sel) sel.addEventListener('change', function(){ refreshWorldbookBar(true); });
+            if(sel) sel.addEventListener('change', function(){ refreshWorldbookBar(false); });
             var refreshBtn = document.getElementById('world_refresh');
-            if(refreshBtn) refreshBtn.addEventListener('click', function(){ setTimeout(function(){ refreshWorldbookBar(true); }, 120); });
+            if(refreshBtn) refreshBtn.addEventListener('click', function(){ setTimeout(function(){ refreshWorldbookBar(false); }, 120); });
             onEvent('WORLDINFO_UPDATED', function(name){
-                if(!wbBarWorld || name === wbBarWorld) refreshWorldbookBar(true);
+                if(!wbBarWorld || name === wbBarWorld) refreshWorldbookBar(false);
             });
-            onEvent('WORLDINFO_SETTINGS_UPDATED', function(){ refreshWorldbookBar(true); });
+            onEvent('WORLDINFO_SETTINGS_UPDATED', function(){ refreshWorldbookBar(false); });
         }catch(e){}
     }
 
@@ -4428,6 +4472,7 @@ function buildPanel() {
         applyAccentTheme();
     };
     applyNight(!!settings.nightMode);
+    syncThemeObserver();
     nightBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         settings.nightMode = !panel.classList.contains('night');
@@ -4437,7 +4482,7 @@ function buildPanel() {
 
     // 夜间 class 可能由初始化/外部流程切换，监听后同步重算实色强调，避免浅底白字
     try {
-        const accentObserver = new MutationObserver(() => applyAccentTheme());
+        const accentObserver = new MutationObserver(function(){ scheduleAccentTheme(); });
         accentObserver.observe(panel, { attributes: true, attributeFilter: ['class'] });
     } catch (e) { /* 忽略 */ }
 
@@ -4453,6 +4498,7 @@ function buildPanel() {
             settings.accentMode = settings.accentMode === 'theme' ? 'mono' : 'theme';
             saveSettingsDebounced();
             applyAccentTheme();
+            syncThemeObserver();
         });
     }
 
