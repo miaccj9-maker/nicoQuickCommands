@@ -3223,9 +3223,15 @@ var nqcArchive = (function(){
                 var sel = document.getElementById('settings_preset_openai');
                 if(sel) sel.addEventListener('change', function(){ setTimeout(function(){ refreshPresetBar(true); }, 120); });
                 onEvent('SETTINGS_UPDATED', function(){ setTimeout(function(){ refreshPresetBar(true); }, 120); });
+                // 设置面板/预设清单晚于扩展就绪时，等 APP_READY 再补一次
+                onEvent('APP_READY', function(){
+                    [0, 400, 1200].forEach(function(ms){
+                        arcTimeout(function(){ try{ refreshPresetBar(true); }catch(e){} }, ms);
+                    });
+                });
             }catch(e){}
         }
-        [400, 1200, 2600].forEach(function(ms){
+        [400, 1200, 2600, 5200].forEach(function(ms){
             arcTimeout(function(){ try{ refreshPresetBar(true); }catch(e){} }, ms);
         });
     }
