@@ -567,6 +567,7 @@ var nqcArchive = (function(){
     var wbBarWorld = null;
     var wbBarSig = '';
     var wbBarBound = false;
+    var wbPrefetched = {};
     var wiMod = null;
     // 注意：上面的动态 import 已先把 Promise 赋给同名变量；这里不能再直接初始化，否则会把已发起的加载覆盖掉。
     var wiModReady = wiModReady || Promise.resolve();
@@ -1957,6 +1958,13 @@ var nqcArchive = (function(){
         var bar = ensureWorldbookBar();
         if(!bar) return;
         var world = selectedWorldName();
+        // 预热：方案条出现时就把条目数据读入缓存，点“新建方案”不再等网络/不再要求先动条目
+        if(world && !wbPrefetched[world]){
+            wbPrefetched[world] = true;
+            ensureWiModule().then(function(m){
+                if(m && typeof m.loadWorldInfo === 'function') return m.loadWorldInfo(world);
+            }).catch(function(){ wbPrefetched[world] = false; });
+        }
         var plans = world ? plansForWorld(world) : [];
         var active = world ? planById(world, worldbookActive[world]) : null;
         var sig = (world||'') + '|' + (active ? active.id : '') + '|' + plans.map(function(p){
