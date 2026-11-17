@@ -57,7 +57,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.7.2';
+const MODULE_VERSION = '1.7.3';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -275,6 +275,11 @@ function nqcApplyAccentVars(el, baseBg, isNight) {
     el.style.setProperty('--nqc-accent-soft', nqcColorCss(soft));
     el.style.setProperty('--nqc-accent-soft-2', nqcColorCss(soft2));
     el.style.setProperty('--nqc-accent-line', nqcColorCss(line));
+    // iMessage 蓝跟随明暗切换，保证在实色弹窗与面板上都清晰
+    el.style.setProperty('--nqc-im-blue', isNight ? '#0a84ff' : '#007aff');
+    el.style.setProperty('--nqc-im-blue-strong', isNight ? '#3f9bff' : '#0064d2');
+    el.style.setProperty('--nqc-im-blue-soft', isNight ? 'rgba(10, 132, 255, 0.2)' : 'rgba(0, 122, 255, 0.12)');
+    el.style.setProperty('--nqc-im-blue-line', isNight ? 'rgba(10, 132, 255, 0.34)' : 'rgba(0, 122, 255, 0.24)');
 }
 
 function nqcForceModalLayer(modalEl, card, solidModalBg) {
@@ -329,7 +334,7 @@ function nqcForceModalLayer(modalEl, card, solidModalBg) {
     card.style.setProperty('position', 'relative', 'important');
     card.style.setProperty('z-index', '1', 'important');
     card.style.setProperty('border', '0', 'important');
-    card.style.setProperty('border-radius', '22px', 'important');
+    card.style.setProperty('border-radius', '20px', 'important');
     card.style.setProperty('padding', mobile ? '16px 14px calc(14px + env(safe-area-inset-bottom))' : '18px 16px 16px', 'important');
 
     const list = card.querySelector('.nqc-wb-list');
@@ -454,7 +459,7 @@ function nqcToast(msg) {
    扩展重载时解绑旧事件、断开旧 Observer、清理定时器，不叠加、不卡顿。 */
 var nqcArchive = (function(){
     var MODULE_NAME = 'chat-archive-manager';
-    var MODULE_VERSION = '1.7.2';
+    var MODULE_VERSION = '1.7.3';
 
     /* ---------- 酒馆上下文桥接（防御式，取不到不拖垮主面板） ---------- */
     function getContext(){
@@ -4450,7 +4455,7 @@ function buildPanel() {
     try {
         const tabsEl = panel.querySelector('.nqc-tabs');
         if (tabsEl) tabsEl.style.setProperty('border-radius', '999px', 'important');
-        panel.style.setProperty('border-radius', '0 12px 12px 0', 'important');
+        panel.style.setProperty('border-radius', '0 18px 18px 0', 'important');
     } catch (e) { /* 忽略 */ }
 
     // 夜间模式：灰色大背景 + 黑色子模块 + 白色文本（状态本地持久化）

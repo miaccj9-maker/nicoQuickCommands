@@ -4,6 +4,7 @@
    默认黑白实色强调；可在面板右上角切换为跟随当前 CSS 主题
    ============================================================ */
 
+/* iMessage 蓝：只用于开关、主按钮、选中方案与“当前”标记，不铺满界面 */
 :root {
     --nqc-accent: #111111;
     --nqc-accent-ink: #ffffff;
@@ -11,6 +12,10 @@
     --nqc-accent-soft: #ececec;
     --nqc-accent-soft-2: #e0e0e0;
     --nqc-accent-line: #cfcfcf;
+    --nqc-im-blue: #007aff;
+    --nqc-im-blue-strong: #0064d2;
+    --nqc-im-blue-soft: rgba(0, 122, 255, 0.12);
+    --nqc-im-blue-line: rgba(0, 122, 255, 0.24);
 }
 
 /* 夜间兜底：即使脚本尚未写入变量，也保持白底黑字实色可读 */
@@ -21,6 +26,10 @@
     --nqc-accent-soft: #2c2c2e;
     --nqc-accent-soft-2: #3a3a3c;
     --nqc-accent-line: #48484a;
+    --nqc-im-blue: #0a84ff;
+    --nqc-im-blue-strong: #3f9bff;
+    --nqc-im-blue-soft: rgba(10, 132, 255, 0.2);
+    --nqc-im-blue-line: rgba(10, 132, 255, 0.34);
 }
 
 #nqc-panel {
@@ -355,8 +364,8 @@
     height: 40px;
     border: 0;
     border-radius: 12px;
-    background: rgba(118, 118, 128, 0.12);
-    color: #1c1c1e;
+    background: var(--nqc-im-blue-soft, rgba(0, 122, 255, 0.12));
+    color: var(--nqc-im-blue, #007aff);
     font-size: 12.5px;
     font-weight: 600;
     letter-spacing: 0.3px;
@@ -368,11 +377,11 @@
 }
 
 .nqc-add-btn:hover {
-    background: rgba(118, 118, 128, 0.17);
+    background: var(--nqc-im-blue-line, rgba(0, 122, 255, 0.24));
 }
 
 .nqc-add-btn:active {
-    background: rgba(118, 118, 128, 0.24);
+    background: var(--nqc-im-blue-line, rgba(0, 122, 255, 0.3));
 }
 
 .nqc-add-btn .nqc-add-icon {
@@ -782,9 +791,9 @@
     background: rgba(255, 255, 255, 0.92);
 }
 
-/* 当前存档：淡蓝底 + 轻微放大 + 轻投影形成层次 */
+/* 当前存档：iMessage 淡蓝底 + 轻微放大 + 轻投影形成层次 */
 .nqc-msg.nqc-cur {
-    background: var(--nqc-accent-soft, rgba(118,118,128,0.07));
+    background: var(--nqc-im-blue-soft, rgba(0, 122, 255, 0.1));
     box-shadow: 0 10px 22px -14px rgba(20, 24, 32, 0.35);
     transform: scale(1.02);
     position: relative;
@@ -889,8 +898,8 @@
     flex-shrink: 0;
     padding: 1px 6px;
     border-radius: 999px;
-    background: var(--nqc-accent, #111111);
-    color: var(--nqc-accent-ink, #ffffff);
+    background: var(--nqc-im-blue, #007aff);
+    color: #ffffff;
     font-size: 9px;
     font-weight: 600;
     line-height: 1.5;
@@ -1012,7 +1021,7 @@
     border: 0;
     border-radius: 999px;
     background: var(--nqc-accent-soft, rgba(118,118,128,0.10));
-    color: var(--nqc-accent, #111111);
+    color: var(--nqc-im-blue, #007aff);
     font-size: 10.5px;
     font-weight: 600;
     padding: 6px 0;
@@ -1023,11 +1032,11 @@
 }
 
 .nqc-msg-load:hover {
-    background: var(--nqc-accent-soft-2, rgba(118,118,128,0.18));
+    background: var(--nqc-im-blue-soft, rgba(0, 122, 255, 0.12));
 }
 
 .nqc-msg-load:active {
-    background: var(--nqc-accent-soft-2, rgba(118,118,128,0.26));
+    background: var(--nqc-im-blue-line, rgba(0, 122, 255, 0.24));
 }
 
 /* 每行的操作列：加载 + 置顶 / 收藏 / 锁定 + 删除（紧凑两列网格） */
@@ -1389,16 +1398,16 @@
 }
 
 #nqc-panel.night .nqc-add-btn {
-    background: #1c1c1e;
-    color: #ffffff;
+    background: var(--nqc-im-blue-soft);
+    color: var(--nqc-im-blue);
 }
 
 #nqc-panel.night .nqc-add-btn:hover {
-    background: #242426;
+    background: var(--nqc-im-blue-line);
 }
 
 #nqc-panel.night .nqc-add-btn:active {
-    background: #2a2a2f;
+    background: var(--nqc-im-blue-line);
 }
 
 #nqc-panel.night .nqc-input {
@@ -1521,7 +1530,7 @@
 }
 
 #nqc-panel.night .nqc-msg.nqc-cur {
-    background: var(--nqc-accent-soft-2, rgba(118,118,128,0.19));
+    background: var(--nqc-im-blue-soft);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 22px -14px rgba(0, 0, 0, 0.8);
 }
 
@@ -1557,11 +1566,11 @@
 
 #nqc-panel.night .nqc-msg-load {
     background: var(--nqc-accent-soft-2, rgba(118,118,128,0.18));
-    color: var(--nqc-accent, #111111);
+    color: var(--nqc-im-blue);
 }
 
 #nqc-panel.night .nqc-msg-load:hover {
-    background: var(--nqc-accent-soft-2, rgba(118,118,128,0.28));
+    background: var(--nqc-im-blue-soft);
 }
 
 #nqc-panel.night .nqc-msg-avx {
@@ -2238,11 +2247,11 @@
 #WorldInfo .nqc-wb-btn.ghost:disabled { opacity: 0.38; cursor: default; }
 
 #WorldInfo .nqc-wb-btn.primary {
-    color: var(--nqc-accent-ink, #ffffff);
-    background: var(--nqc-accent, #111111);
+    color: #ffffff;
+    background: var(--nqc-im-blue, #007aff);
 }
 
-#WorldInfo .nqc-wb-btn.primary:hover { background: var(--nqc-accent-strong, #000000); }
+#WorldInfo .nqc-wb-btn.primary:hover { background: var(--nqc-im-blue-strong, #0064d2); }
 #WorldInfo .nqc-wb-btn.primary:disabled { opacity: 0.45; cursor: default; }
 
 #WorldInfo .nqc-wb-chips {
@@ -2279,8 +2288,8 @@
 
 #WorldInfo .nqc-wb-chip:hover { background: rgba(118, 118, 128, 0.22); }
 #WorldInfo .nqc-wb-chip.busy { opacity: 0.6; cursor: wait; }
-#WorldInfo .nqc-wb-chip.on { color: var(--nqc-accent-ink, #ffffff); background: var(--nqc-accent, #111111); }
-#WorldInfo .nqc-wb-chip.on:hover { background: var(--nqc-accent-strong, #000000); }
+#WorldInfo .nqc-wb-chip.on { color: #ffffff; background: var(--nqc-im-blue, #007aff); }
+#WorldInfo .nqc-wb-chip.on:hover { background: var(--nqc-im-blue-strong, #0064d2); }
 
 #WorldInfo .nqc-wb-chip-name {
     max-width: 108px;
@@ -2392,8 +2401,8 @@
 .nqc-pp-chip:hover { background: rgba(118, 118, 128, 0.2) !important; }
 .nqc-pp-chip:active { transform: scale(0.98); }
 .nqc-pp-chip.busy { opacity: 0.55; pointer-events: none; }
-.nqc-pp-chip.on { background: var(--nqc-accent, #111111) !important; color: var(--nqc-accent-ink, #ffffff) !important; }
-.nqc-pp-chip.on:hover { background: var(--nqc-accent-strong, #000000) !important; }
+.nqc-pp-chip.on { background: var(--nqc-im-blue, #007aff) !important; color: #ffffff !important; }
+.nqc-pp-chip.on:hover { background: var(--nqc-im-blue-strong, #0064d2) !important; }
 .nqc-pp-chip-name { max-width: 118px; overflow: hidden; text-overflow: ellipsis; }
 .nqc-pp-chip-count { font-size: 10px; font-variant-numeric: tabular-nums; opacity: 0.55; }
 .nqc-pp-chip.on .nqc-pp-chip-count { opacity: 0.72; }
@@ -2641,9 +2650,9 @@
     transition: transform 0.16s ease;
 }
 
-.nqc-wb-entry.on .nqc-wb-sw { background: var(--nqc-accent, #111111); }
+.nqc-wb-entry.on .nqc-wb-sw { background: var(--nqc-im-blue, #007aff); }
 .nqc-wb-entry.on .nqc-wb-sw i {
-    background: var(--nqc-accent-ink, #ffffff);
+    background: #ffffff;
     transform: translateX(16px);
 }
 
@@ -2692,11 +2701,11 @@
 .nqc-wb-btn.ghost:hover { background: rgba(118, 118, 128, 0.2); }
 
 .nqc-wb-btn.primary {
-    color: var(--nqc-accent-ink, #ffffff);
-    background: var(--nqc-accent, #111111);
+    color: #ffffff;
+    background: var(--nqc-im-blue, #007aff);
 }
 
-.nqc-wb-btn.primary:hover { background: var(--nqc-accent-strong, #000000); }
+.nqc-wb-btn.primary:hover { background: var(--nqc-im-blue-strong, #0064d2); }
 .nqc-wb-btn.primary:disabled { opacity: 0.55; cursor: default; }
 
 /* 存档内的方案选择器：沿用用户设定选择器的骨架，换成世界书行 */
