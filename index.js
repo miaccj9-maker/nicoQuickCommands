@@ -57,7 +57,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.7.0';
+const MODULE_VERSION = '1.7.1';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -422,7 +422,7 @@ function nqcToast(msg) {
    扩展重载时解绑旧事件、断开旧 Observer、清理定时器，不叠加、不卡顿。 */
 var nqcArchive = (function(){
     var MODULE_NAME = 'chat-archive-manager';
-    var MODULE_VERSION = '1.7.0';
+    var MODULE_VERSION = '1.7.1';
 
     /* ---------- 酒馆上下文桥接（防御式，取不到不拖垮主面板） ---------- */
     function getContext(){
@@ -568,11 +568,12 @@ var nqcArchive = (function(){
     var wbBarSig = '';
     var wbBarBound = false;
     var wiMod = null;
-    var wiModReady = Promise.resolve();
+    // 注意：上面的动态 import 已先把 Promise 赋给同名变量；这里不能再直接初始化，否则会把已发起的加载覆盖掉。
+    var wiModReady = wiModReady || Promise.resolve();
     var presetMod = null;
-    var presetModReady = Promise.resolve();
+    var presetModReady = presetModReady || Promise.resolve();
     var presetMgrMod = null;
-    var presetMgrReady = Promise.resolve();
+    var presetMgrReady = presetMgrReady || Promise.resolve();
     var ppBarEl = null;
     var ppBarSig = '';
     var ppModalEl = null;
@@ -1835,11 +1836,22 @@ var nqcArchive = (function(){
     function selectedWorldName(){
         try{
             var sel = document.getElementById('world_editor_select');
-            if(!sel || sel.value === '' || sel.selectedIndex < 0) return null;
-            var names = wiMod && Array.isArray(wiMod.world_names) ? wiMod.world_names : null;
-            if(names && names.length) return names[Number(sel.value)] || null;
-            var opt = sel.options && sel.options[sel.selectedIndex];
-            return opt ? String(opt.textContent || '').trim() || null : null;
+            if(sel && sel.selectedIndex >= 0){
+                var names = wiMod && Array.isArray(wiMod.world_names) ? wiMod.world_names : null;
+                var idx = Number(sel.value);
+                if(names && names.length && isFinite(idx) && names[idx]) return names[idx];
+                var opt = sel.options && sel.options[sel.selectedIndex];
+                var txt = opt ? String(opt.textContent || '').trim() : '';
+                if(txt) return txt;
+            }
+            // 编辑器下拉还没进入选中态时，退回全局世界书选择框，避免“没动条目就新建不了方案”
+            var global = document.getElementById('world_info');
+            if(global && global.selectedIndex >= 0){
+                var gopt = global.options && global.options[global.selectedIndex];
+                var gtxt = gopt ? String(gopt.textContent || '').trim() : '';
+                if(gtxt) return gtxt;
+            }
+            return null;
         }catch(e){ return null; }
     }
     function plansForWorld(world){
@@ -1979,15 +1991,20 @@ var nqcArchive = (function(){
         edit.textContent = '编辑';
         edit.disabled = !active;
         edit.addEventListener('click', function(){
-            if(active) openWorldbookPlanModal(world, active);
+            var w = world || selectedWorldName();
+            if(!w) return;
+            var cur = planById(w, worldbookActive[w]) || active;
+            if(cur) openWorldbookPlanModal(w, cur);
         });
         var add = document.createElement('button');
         add.type = 'button';
         add.className = 'nqc-wb-btn primary';
         add.textContent = '+ 新建方案';
-        add.disabled = !world;
         add.addEventListener('click', function(){
-            if(world) openWorldbookPlanModal(world, null);
+            // 不依赖打开面板时是否已经“动过条目”：点击瞬间再解析当前世界书
+            var w = world || selectedWorldName();
+            if(!w){ nqcToast('先在上方选择一个世界书'); return; }
+            openWorldbookPlanModal(w, null);
         });
         acts.appendChild(edit); acts.appendChild(add);
         head.appendChild(acts);
@@ -2439,25 +2456,107 @@ var nqcArchive = (function(){
         }catch(e){}
         return { id: dummy };
     }
+    /* 预设条目优先从 getContext().chatCompletionSettings 读取：
+       不依赖 PromptManager 是否已 init，避免 serviceSettings 为 null 时抛错。 */
+    function ppSettings(){
+        var c = getContext();
+        var s = c && (c.chatCompletionSettings || c.oai_settings);
+        return s || null;
+    }
+    function ppOrderEntry(){
+        var s = ppSettings();
+        var po = s && s.prompt_order;
+        if(!Array.isArray(po)) return null;
+        var entry = null;
+        for(var i=0;i<po.length;i++){
+            if(po[i] && String(po[i].character_id) === '100001' && Array.isArray(po[i].order)){ entry = po[i]; break; }
+        }
+        if(!entry){
+            for(var j=0;j<po.length;j++){
+                if(po[j] && Array.isArray(po[j].order)){ entry = po[j]; break; }
+            }
+        }
+        return entry;
+    }
+    function ppPromptNameMap(){
+        var out = {};
+        var s = ppSettings();
+        var arr = s && s.prompts;
+        if(Array.isArray(arr)){
+            arr.forEach(function(p){ if(p && p.identifier) out[p.identifier] = String(p.name || p.identifier); });
+        }
+        return out;
+    }
+    function ppDomPromptName(id){
+        try{
+            var rows = document.querySelectorAll('#completion_prompt_manager_list .completion_prompt_manager_prompt');
+            for(var i=0;i<rows.length;i++){
+                if(rows[i].dataset && rows[i].dataset.pmIdentifier === id){
+                    var n = rows[i].querySelector('.completion_prompt_manager_prompt_name');
+                    if(n) return String(n.textContent || '').trim() || id;
+                }
+            }
+        }catch(e){}
+        return id;
+    }
+    function ppSyncRows(order){
+        try{
+            var rows = document.querySelectorAll('#completion_prompt_manager_list .completion_prompt_manager_prompt');
+            Array.prototype.forEach.call(rows, function(row){
+                var id = row.dataset ? row.dataset.pmIdentifier : '';
+                if(!id) return;
+                var item = null;
+                for(var i=0;i<order.length;i++){ if(order[i] && order[i].identifier === id){ item = order[i]; break; } }
+                if(!item) return;
+                var on = !!item.enabled;
+                row.classList.toggle('completion_prompt_manager_prompt_disabled', !on);
+                var t = row.querySelector('.prompt-manager-toggle-action');
+                if(t){
+                    t.classList.toggle('fa-toggle-on', on);
+                    t.classList.toggle('fa-toggle-off', !on);
+                }
+            });
+        }catch(e){}
+    }
+    function ppSwitchPreset(name){
+        var sel = document.getElementById('settings_preset_openai');
+        if(!sel || !sel.options) return false;
+        for(var i=0;i<sel.options.length;i++){
+            var txt = String(sel.options[i].textContent || '').trim();
+            if(txt === name){
+                if(sel.selectedIndex !== i) sel.selectedIndex = i;
+                try{ sel.dispatchEvent(new Event('change', { bubbles:true })); }catch(e){}
+                return true;
+            }
+        }
+        return false;
+    }
     async function ensurePresetModule(){
         var m = await presetModReady;
         if(!m) return null;
         if(!m.promptManager && typeof m.setupChatCompletionPromptManager === 'function'){
-            try{ m.setupChatCompletionPromptManager(m.oai_settings); }catch(e){ console.warn('[nqc-pp] PromptManager 初始化失败', e); }
+            try{ m.setupChatCompletionPromptManager(m.oai_settings || ppSettings()); }catch(e){ console.warn('[nqc-pp] PromptManager 初始化失败', e); }
         }
         return (m && m.promptManager) ? m : null;
     }
     async function readPromptEntries(){
-        var m = await ensurePresetModule();
-        var pm = m && m.promptManager;
-        if(!pm) throw new Error('预设模块未就绪');
-        var order = pm.getPromptOrderForCharacter(presetOrderCharacter(pm)) || [];
+        var entry = ppOrderEntry();
+        var order = entry && entry.order;
+        if(!order || !order.length){
+            try{
+                var m = await ensurePresetModule();
+                var pm = m && m.promptManager;
+                if(pm && pm.serviceSettings && Array.isArray(pm.serviceSettings.prompt_order)){
+                    order = pm.getPromptOrderForCharacter(presetOrderCharacter(pm)) || [];
+                }
+            }catch(e){}
+        }
+        if(!order || !order.length) throw new Error('当前预设没有 Prompt 条目');
+        var names = ppPromptNameMap();
         return order.map(function(item){
-            var p = null;
-            try{ p = pm.getPromptById(item.identifier); }catch(e){}
             return {
                 identifier: item.identifier,
-                name: (p && p.name) ? String(p.name) : String(item.identifier),
+                name: names[item.identifier] || ppDomPromptName(item.identifier),
                 enabled: !!item.enabled
             };
         });
@@ -2472,28 +2571,36 @@ var nqcArchive = (function(){
         var targetPreset = String(plan.preset || '').trim();
         var info = selectedPresetInfo();
         if(targetPreset && (!info || info.name !== targetPreset)){
-            var manager = null;
+            var switched = false;
             try{
                 var mgrMod = await presetMgrReady;
-                var c = getContext();
-                var gm = (mgrMod && mgrMod.getPresetManager) || window.getPresetManager || (c && c.getPresetManager);
-                manager = gm ? gm('openai') : null;
+                var c0 = getContext();
+                var gm = (mgrMod && mgrMod.getPresetManager) || window.getPresetManager || (c0 && c0.getPresetManager);
+                var manager = gm ? gm('openai') : null;
+                if(manager && typeof manager.findPreset === 'function' && typeof manager.selectPreset === 'function'){
+                    var val = manager.findPreset(targetPreset);
+                    if(val !== null && val !== undefined){ manager.selectPreset(val); switched = true; }
+                }
             }catch(e){}
-            if(manager && typeof manager.findPreset === 'function' && typeof manager.selectPreset === 'function'){
-                var val = manager.findPreset(targetPreset);
-                if(val !== null && val !== undefined){
-                    try{
-                        manager.selectPreset(val);
-                        // 切换预设会重写 prompt_order，等一拍再写入方案开关
-                        await ppSleep(220);
-                    }catch(e){ console.warn('[nqc-pp] 切换预设失败', e); }
+            if(!switched) switched = ppSwitchPreset(targetPreset);
+            if(switched){
+                // 切换预设会重新拉取并写入 prompt_order，等到方案里的条目出现再落开关
+                var waited = 0;
+                var entriesPlan = plan.entries || {};
+                while(waited < 800){
+                    var probe = ppOrderEntry();
+                    var hit = probe && Array.isArray(probe.order) && probe.order.some(function(it){
+                        return it && Object.prototype.hasOwnProperty.call(entriesPlan, it.identifier);
+                    });
+                    if(hit) break;
+                    await ppSleep(80);
+                    waited += 80;
                 }
             }
         }
-        var m = await ensurePresetModule();
-        var pm = m && m.promptManager;
-        if(!pm) throw new Error('预设模块未就绪');
-        var order = pm.getPromptOrderForCharacter(presetOrderCharacter(pm)) || [];
+        var orderEntry = ppOrderEntry();
+        if(!orderEntry || !Array.isArray(orderEntry.order)) throw new Error('当前预设没有 Prompt 顺序');
+        var order = orderEntry.order;
         var entries = plan.entries || {};
         var changed = 0;
         order.forEach(function(item){
@@ -2505,8 +2612,16 @@ var nqcArchive = (function(){
             }
         });
         if(changed){
-            try{ pm.render(false); }catch(e){}
-            try{ await Promise.race([pm.saveServiceSettings(), ppSleep(1100)]); }catch(e){ console.warn('[nqc-pp] 保存 Prompt 开关失败', e); }
+            ppSyncRows(order);
+            try{
+                var m = await ensurePresetModule();
+                if(m && m.promptManager){ try{ m.promptManager.render(false); }catch(e){} }
+            }catch(e){}
+            try{
+                var c = getContext();
+                if(c && typeof c.saveSettingsDebounced === 'function') c.saveSettingsDebounced();
+            }catch(e){}
+            await ppSleep(60);
         }
         return changed;
     }
@@ -2674,7 +2789,7 @@ var nqcArchive = (function(){
             all = await readPromptEntries();
         }catch(e){
             console.warn('[nqc-pp] 读取 Prompt 条目失败', e);
-            nqcToast('预设模块还没就绪，请稍后再试');
+            nqcToast('读取预设条目失败：' + (e && e.message ? e.message : '请稍后再试'));
             return;
         }
         if(!all.length){ nqcToast('当前预设没有可用的 Prompt 条目'); return; }
@@ -2842,7 +2957,7 @@ var nqcArchive = (function(){
                 now.forEach(function(item){ state[item.identifier] = !!item.enabled; });
                 Array.prototype.forEach.call(list.querySelectorAll('.nqc-wb-entry'), function(row){ paintRow(row, row.dataset.id); });
                 nqcToast('已读取当前开关');
-            }catch(e){ nqcToast('读取当前开关失败'); }
+            }catch(e){ nqcToast('读取当前开关失败：' + (e && e.message ? e.message : '请稍后再试')); }
         });
 
         var foot = document.createElement('div');
