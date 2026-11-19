@@ -881,10 +881,16 @@ var nqcArchive = (function(){
             var b = avatar ? explicitPersonaBindingFor(avatar, keyFile) : null;
             if(!b || !b.avatar){
                 var byFile = explicitPersonaBindingByFile(keyFile);
-                if(byFile && (!avatar || byFile.avatar === avatar)) b = byFile.binding;
+                if(byFile && (!avatar || byFile.avatar === avatar || pending)) b = byFile.binding;
             }
             if(!b || !b.avatar){
-                console.log('[nqc-persona] CHAT_CHANGED 未找到存档绑定', { chatId: base, avatar: avatar });
+                // 没有存档级显式绑定时，沿用角色当前的用户设定（面板上显示为“已绑定”的那种）
+                var eff = avatar ? effectivePersonaBinding(avatar, keyFile) : null;
+                if(eff && eff.avatar) b = eff;
+            }
+            if((!b || !b.avatar) && pending && pending.avatar) b = { avatar: String(pending.avatar) };
+            if(!b || !b.avatar){
+                console.log('[nqc-persona] CHAT_CHANGED 未找到可用人设', { chatId: base, avatar: avatar });
                 return;
             }
             var personas = (c.powerUserSettings && c.powerUserSettings.personas) || {};
@@ -3994,9 +4000,9 @@ var nqcArchive = (function(){
             }
         }catch(e){}
 
-        var stampBinding = explicitPersonaBindingFor(avatar, fileName);
+        var stampBinding = effectivePersonaBinding(avatar, fileName);
         pendingPersonaStamp = (stampBinding && stampBinding.avatar) ? { avatar: String(stampBinding.avatar), chatBase: chatBase } : null;
-        console.log('[nqc-persona] loadChat 绑定检查', { avatar: avatar, fileName: fileName, chatBase: chatBase, bound: pendingPersonaStamp ? pendingPersonaStamp.avatar : null });
+        console.log('[nqc-persona] loadChat 人设检查', { avatar: avatar, fileName: fileName, chatBase: chatBase, persona: pendingPersonaStamp ? pendingPersonaStamp.avatar : null, explicit: !!(stampBinding && stampBinding.explicit) });
         switching = true;
         var prevChatFile = chars[idx] ? chars[idx].chat : undefined;
         markRowLoading(row, loadBtn, true);
