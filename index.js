@@ -49,6 +49,8 @@
  *   修复手机端面板与世界书方案弹窗的横向溢出，窄屏方案胶囊自动换行。
  * v1.6.5 更新：弹窗用内联 !important 强制顶层、实色、居中与限宽，彻底覆盖主题的透明/层级规则。
  * v1.6.6 更新：修复手机端方案弹窗首次点“保存”被键盘/焦点拦截的问题；条目渲染与搜索改为更轻量的批量处理。
+ * v1.7.4 更新：世界书方案条被原生面板重绘成空壳后自动补建；下拉空值/占位项不再误取第一本世界书。
+ * v1.7.5 更新：存档绑定用户设定后，进档时先写入 chat_metadata.persona，酒馆不再弹「选择面具」。
  *
  * 纯前端扩展，不修改 SillyTavern 核心代码；禁用或删除本扩展即可完全移除。
  */
@@ -57,7 +59,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.7.3';
+const MODULE_VERSION = '1.7.5';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -459,7 +461,7 @@ function nqcToast(msg) {
    扩展重载时解绑旧事件、断开旧 Observer、清理定时器，不叠加、不卡顿。 */
 var nqcArchive = (function(){
     var MODULE_NAME = 'chat-archive-manager';
-    var MODULE_VERSION = '1.7.3';
+    var MODULE_VERSION = '1.7.5';
 
     /* ---------- 酒馆上下文桥接（防御式，取不到不拖垮主面板） ---------- */
     function getContext(){
@@ -589,6 +591,7 @@ var nqcArchive = (function(){
     // 切换存档串行锁：切换期间忽略重复点击，并压掉中间态的「当前」标记 / 头像刷新
     var switching = false;
     var deleting = false;
+    var pendingPersonaStamp = null;
     var confirmEl = null;
     var confirmClose = null;
     var personaPickerEl = null;
@@ -800,17 +803,78 @@ var nqcArchive = (function(){
         return null;
     }
 
+    // 只按存档里“显式绑定”的人设查找，避免把继承来的当前面具写死到存档
+    function explicitPersonaBindingFor(avatar, fileName){
+        ensureSettings();
+        if(!avatar || !fileName) return null;
+        var exact = personaBindings[noteKey(avatar, fileName)];
+        if(exact && exact.avatar) return exact;
+        var base = stripJsonl(fileName).toLowerCase();
+        var keys = Object.keys(personaBindings);
+        for(var i = 0; i < keys.length; i++){
+            var k = keys[i];
+            var sep = k.indexOf('::');
+            if(sep < 0) continue;
+            if(k.slice(0, sep) !== String(avatar)) continue;
+            if(stripJsonl(k.slice(sep + 2)).toLowerCase() !== base) continue;
+            var hit = personaBindings[k];
+            if(hit && hit.avatar) return hit;
+        }
+        return null;
+    }
+
+    // CHAT_CHANGED 是酒馆原生“选择面具”弹窗的触发点。
+    // 本监听器注册为第一个执行：先把存档绑定的人设写进 chat_metadata.persona，
+    // 酒馆随后就会按 chat 锁定直接选中，不再弹出 Select Persona。
+    function stampPersonaForChatChange(){
+        try{
+            var c = getContext();
+            if(!c || !c.chatMetadata) return;
+            var base = stripJsonl(String(c.chatId || ''));
+            if(!base) return;
+            var avatar = '';
+            var pending = pendingPersonaStamp;
+            if(pending && pending.chatBase && stripJsonl(pending.chatBase) === base){
+                avatar = String(pending.avatar || '');
+            }
+            if(!avatar){
+                var chars = c.characters || [];
+                var idx = Number(c.characterId);
+                var ch = Number.isFinite(idx) ? chars[idx] : null;
+                if(ch && ch.avatar) avatar = String(ch.avatar);
+            }
+            if(!avatar && c.groupId){
+                var groups = c.groups || [];
+                for(var i = 0; i < groups.length; i++){
+                    var g = groups[i];
+                    if(g && String(g.id) === String(c.groupId)){ avatar = String(g.avatar || g.id || ''); break; }
+                }
+            }
+            if(!avatar) return;
+            var keyFile = base + '.jsonl';
+            var b = explicitPersonaBindingFor(avatar, keyFile);
+            if((!b || !b.avatar) && c.groupId){
+                b = explicitPersonaBindingFor(String(c.groupId), keyFile);
+            }
+            if(!b || !b.avatar) return;
+            var personas = (c.powerUserSettings && c.powerUserSettings.personas) || {};
+            if(!personas[b.avatar] && b.avatar !== 'user-default.png') return;
+            c.chatMetadata.persona = String(b.avatar);
+        }catch(e){}
+    }
+
     function applyPersonaBinding(avatar, fileName){
         var b = effectivePersonaBinding(avatar, fileName);
         if(!b || !b.avatar) return Promise.resolve();
         var c = getContext();
         if(!c) return Promise.resolve();
-        if(String(currentPersonaKey()) === String(b.avatar)) return Promise.resolve();
         var personas = (c.powerUserSettings && c.powerUserSettings.personas) || {};
         if(!personas[b.avatar] && b.avatar !== 'user-default.png'){
             nqcToast('绑定的用户设定已不存在');
             return Promise.resolve();
         }
+        if(b.explicit && c.chatMetadata) c.chatMetadata.persona = String(b.avatar);
+        if(String(currentPersonaKey()) === String(b.avatar)) return Promise.resolve();
         return arcModReady.then(function(){
             if(typeof arcMod.setUserAvatar !== 'function'){
                 console.warn('['+MODULE_NAME+'] 无法切换用户设定：接口不可用');
@@ -1871,23 +1935,34 @@ var nqcArchive = (function(){
             return null;
         });
     }
+    function worldPlaceholder(text){
+        var t = String(text || '').trim();
+        return !t || t === '--- Pick to Edit ---' || /^---.*---$/.test(t);
+    }
+    function worldNameFromSelect(sel){
+        if(!sel || sel.selectedIndex < 0) return null;
+        var names = wiMod && Array.isArray(wiMod.world_names) ? wiMod.world_names : null;
+        var raw = String(sel.value || '').trim();
+        var idx = raw === '' ? -1 : Number(raw);
+        if(names && names.length && isFinite(idx) && idx >= 0 && names[idx]) return names[idx];
+        var opt = sel.options && sel.options[sel.selectedIndex];
+        var txt = opt ? String(opt.textContent || '').trim() : '';
+        if(worldPlaceholder(txt)) return null;
+        return txt;
+    }
     function selectedWorldName(){
         try{
             var sel = document.getElementById('world_editor_select');
-            if(sel && sel.selectedIndex >= 0){
-                var names = wiMod && Array.isArray(wiMod.world_names) ? wiMod.world_names : null;
-                var idx = Number(sel.value);
-                if(names && names.length && isFinite(idx) && names[idx]) return names[idx];
-                var opt = sel.options && sel.options[sel.selectedIndex];
-                var txt = opt ? String(opt.textContent || '').trim() : '';
-                if(txt) return txt;
+            if(sel){
+                var picked = worldNameFromSelect(sel);
+                if(picked) return picked;
             }
             // 编辑器下拉还没进入选中态时，退回全局世界书选择框，避免“没动条目就新建不了方案”
             var global = document.getElementById('world_info');
             if(global && global.selectedIndex >= 0){
                 var gopt = global.options && global.options[global.selectedIndex];
                 var gtxt = gopt ? String(gopt.textContent || '').trim() : '';
-                if(gtxt) return gtxt;
+                if(!worldPlaceholder(gtxt)) return gtxt;
             }
             return null;
         }catch(e){ return null; }
@@ -2007,7 +2082,8 @@ var nqcArchive = (function(){
         var sig = (world||'') + '|' + (active ? active.id : '') + '|' + plans.map(function(p){
             return (p.id||'') + ':' + (p.name||'') + ':' + (Number(p.updatedAt)||0);
         }).join(';');
-        if(!force && sig === wbBarSig) return;
+        var barHealthy = !!(bar.querySelector('.nqc-wb-head') && bar.querySelector('.nqc-wb-btn.primary'));
+        if(!force && sig === wbBarSig && barHealthy) return;
         wbBarSig = sig;
         wbBarWorld = world;
         bar.innerHTML = '';
@@ -2109,6 +2185,13 @@ var nqcArchive = (function(){
         if(!m){ nqcToast('世界书模块未就绪，请刷新页面'); return; }
         var data = null;
         try{ data = await m.loadWorldInfo(world); }catch(e){}
+        if(!data || !data.entries){
+            var retryWorld = selectedWorldName();
+            if(retryWorld && retryWorld !== world){
+                try{ data = await m.loadWorldInfo(retryWorld); }catch(e){}
+                if(data && data.entries) world = retryWorld;
+            }
+        }
         if(!data || !data.entries){
             nqcToast('读取世界书失败：' + world);
             return;
@@ -3862,6 +3945,8 @@ var nqcArchive = (function(){
             }
         }catch(e){}
 
+        var stampBinding = explicitPersonaBindingFor(avatar, fileName);
+        pendingPersonaStamp = (stampBinding && stampBinding.avatar) ? { avatar: String(stampBinding.avatar), chatBase: chatBase } : null;
         switching = true;
         var prevChatFile = chars[idx] ? chars[idx].chat : undefined;
         markRowLoading(row, loadBtn, true);
@@ -3929,6 +4014,7 @@ var nqcArchive = (function(){
             try{ updateCurrentBadges(); }catch(e2){}
         }finally{
             switching = false;
+            pendingPersonaStamp = null;
             markRowLoading(row, loadBtn, false);
         }
     }
@@ -4282,6 +4368,18 @@ var nqcArchive = (function(){
         if(!name) return;
         try{ c.eventSource.on(name, fn); boundEvents.push({ name:name, fn:fn }); }catch(e){}
     }
+    function onEventFirst(type, fn){
+        var c = getContext();
+        if(!c || !c.eventSource) return;
+        var et = c.eventTypes || c.event_types || {};
+        var name = et[type];
+        if(!name) return;
+        try{
+            if(typeof c.eventSource.makeFirst === 'function') c.eventSource.makeFirst(name, fn);
+            else c.eventSource.on(name, fn);
+            boundEvents.push({ name: name, fn: fn });
+        }catch(e){}
+    }
     function onPanelOpen(){
         if(!arcPage) return;
         ensureSettings();
@@ -4339,6 +4437,8 @@ var nqcArchive = (function(){
             if(activeAvatar && !avatarSet.has(activeAvatar)){ activeAvatar = null; try{ syncPanel(); }catch(e){} }
             if(countsStarted){ countsLoaded = true; loadCounts(); }
         });
+        // 必须最先执行：在酒馆原生 Select Persona 之前写入存档绑定的人设
+        onEventFirst('CHAT_CHANGED', stampPersonaForChatChange);
         // 切换进行中不跟随中间态刷新（否则会先闪一下别的存档的「当前」标记 / 专属头像）
         onEvent('CHAT_CHANGED', function(){
             ensureChatObserver();
