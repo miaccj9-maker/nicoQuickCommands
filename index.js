@@ -59,7 +59,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.7.6';
+const MODULE_VERSION = '1.7.7';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -461,7 +461,7 @@ function nqcToast(msg) {
    扩展重载时解绑旧事件、断开旧 Observer、清理定时器，不叠加、不卡顿。 */
 var nqcArchive = (function(){
     var MODULE_NAME = 'chat-archive-manager';
-    var MODULE_VERSION = '1.7.6';
+    var MODULE_VERSION = '1.7.7';
 
     /* ---------- 酒馆上下文桥接（防御式，取不到不拖垮主面板） ---------- */
     function getContext(){
@@ -5064,24 +5064,90 @@ function bindGesture() {
 
 // ========== 扩展入口 ==========
 
-export async function init() {
-    console.log(`[${MODULE_NAME}] v${MODULE_VERSION} 初始化中...`);
+// ---- 轻量热更新：配合同目录 hot-reload-watcher.js 使用 ----
+// watcher 改动扩展文件后写 hot-reload.json；本扩展轮询该文件：
+//   mode=self   -> 只热替换本扩展（不刷新整页、不打断聊天）
+//   mode=reload -> 安装/卸载/更新其他扩展，自动刷新页面
+var nqcHotTimer = null;
+var nqcHotLastToken = null;
+var nqcHotReloading = false;
 
-    buildPanel();
-    renderList();
-    bindGesture();
-    updateIdentity();
-    bindIdentityEvents();
-    // 存档区：DOM 已就绪，绑定刷新 / 筛选并挂载酒馆事件（数据在首次打开面板时才拉取）
-    try { nqcArchive.init(); } catch (e) { console.warn('[nqc-arc] 存档区初始化失败（不影响快捷指令）', e); }
+function nqcHotTokenUrl() {
+    try { return new URL('./hot-reload.json', import.meta.url).href; } catch (e) { return ''; }
+}
 
-    // 页面卸载时清理面板（防止扩展热重载残留）
-    window.addEventListener('beforeunload', () => {
-        try { if (window.__nqcArchiveMod && window.__nqcArchiveMod.destroy) window.__nqcArchiveMod.destroy(); } catch (e) { /* 忽略 */ }
-        try { removeIdentityListeners(); } catch (e) { /* 忽略 */ }
-        if (nqcToastEl) { nqcToastEl.remove(); nqcToastEl = null; }
-        if (panel) panel.remove();
-        if (mask) mask.remove();
+function nqcRefreshSelfStyle(version) {
+    try {
+        var base = new URL('./index.css', import.meta.url).href.split('?')[0];
+        var href = base + '?v=' + encodeURIComponent(version || String(Date.now()));
+        var old = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).find(function (l) {
+            return l.href && l.href.split('?')[0] === base;
+        });
+        if (!old) return;
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = href;
+        link.onload = function () { try { old.remove(); } catch (e) {} };
+        link.onerror = function () { try { link.remove(); } catch (e) {} };
+        old.parentNode.insertBefore(link, old.nextSibling);
+    } catch (e) { /* 样式刷新失败不影响脚本热替换 */ }
+}
+
+async function nqcHotReloadSelf() {
+    if (nqcHotReloading) return;
+    nqcHotReloading = true;
+    try {
+        var manifestUrl = new URL('./manifest.json', import.meta.url).href;
+        var manifest = await fetch(manifestUrl + '?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); });
+        var version = (manifest && manifest.version) || String(Date.now());
+        var next = new URL('./index.js', import.meta.url);
+        next.searchParams.set('v', version + '-' + Date.now());
+        var nextMod = await import(next.href);
+        if (!nextMod || typeof nextMod.init !== 'function') throw new Error('new module has no init');
+        // 先确认新模块能加载，再拆旧实例，避免更新失败导致面板消失
+        try { destroy(); } catch (e) {}
+        nqcRefreshSelfStyle(version);
+        await nextMod.init();
+        console.log('[nqc-hot] 已热更新到 v' + version);
+    } catch (e) {
+        console.warn('[nqc-hot] 热更新失败，回退整页刷新', e);
+        location.reload();
+    } finally {
+        nqcHotReloading = false;
+    }
+}
+
+function nqcStartHotReload() {
+    if (nqcHotTimer) { clearInterval(nqcHotTimer); nqcHotTimer = null; }
+    nqcHotLastToken = null;
+    var url = nqcHotTokenUrl();
+    if (!url) return;
+    nqcHotTimer = setInterval(async function () {
+        if (document.hidden || nqcHotReloading) return;
+        try {
+            var res = await fetch(url + '?t=' + Date.now(), { cache: 'no-store' });
+            if (!res.ok) return;
+            var data = await res.json();
+            if (!data || !data.token) return;
+            if (nqcHotLastToken === null) { nqcHotLastToken = data.token; return; }
+            if (data.token === nqcHotLastToken) return;
+            nqcHotLastToken = data.token;
+            if (data.mode === 'self') nqcHotReloadSelf();
+            else if (data.mode === 'reload') location.reload();
+        } catch (e) { /* 静默：watcher 未启动时 404 很正常 */ }
+    }, 3000);
+}
+
+export async function destroy() {
+    try { if (nqcHotTimer) { clearInterval(nqcHotTimer); nqcHotTimer = null; } } catch (e) {}
+    try { if (nqcToastTimer) { clearTimeout(nqcToastTimer); nqcToastTimer = null; } } catch (e) {}
+    try { if (typeof nqcArchive !== 'undefined' && nqcArchive && typeof nqcArchive.destroy === 'function') nqcArchive.destroy(); } catch (e) {}
+    try { if (nqcThemeObserver) { nqcThemeObserver.disconnect(); nqcThemeObserver = null; } } catch (e) {}
+    try { removeIdentityListeners(); } catch (e) {}
+    try { if (nqcToastEl) { nqcToastEl.remove(); nqcToastEl = null; } } catch (e) {}
+    try { if (panel) { panel.remove(); panel = null; } } catch (e) {}
+    try { if (mask) { mask.remove(); mask = null; } } catch (e) {}
+    try {
         const doc = document;
         if (doc._nqcHandlers) {
             const h = doc._nqcHandlers;
@@ -5092,6 +5158,24 @@ export async function init() {
             doc.removeEventListener('mouseup', h.mu);
             delete doc._nqcHandlers;
         }
+    } catch (e) {}
+}
+
+export async function init() {
+    console.log(`[${MODULE_NAME}] v${MODULE_VERSION} 初始化中...`);
+
+    buildPanel();
+    renderList();
+    bindGesture();
+    updateIdentity();
+    bindIdentityEvents();
+    // 存档区：DOM 已就绪，绑定刷新 / 筛选并挂载酒馆事件（数据在首次打开面板时才拉取）
+    try { nqcArchive.init(); } catch (e) { console.warn('[nqc-arc] 存档区初始化失败（不影响快捷指令）', e); }
+    nqcStartHotReload();
+
+    // 页面卸载时清理面板（防止扩展热重载残留）
+    window.addEventListener('beforeunload', () => {
+        try { destroy(); } catch (e) { /* 忽略 */ }
     });
 
     console.log(`[${MODULE_NAME}] 初始化完成：左边缘右滑唤出面板（快捷指令 + 聊天存档，iOS 极简风）`);
