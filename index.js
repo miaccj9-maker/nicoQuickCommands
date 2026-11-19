@@ -823,6 +823,15 @@ var nqcArchive = (function(){
         return null;
     }
 
+    // 当前打开存档的绑定 key，用于绑定/解除时同步 chat_metadata.persona
+    function currentChatBindingKey(){
+        var c = getContext();
+        if(!c || c.groupId || !c.characterId || !c.chatId) return null;
+        var ch = (c.characters || [])[Number(c.characterId)];
+        if(!ch || !ch.avatar) return null;
+        return noteKey(ch.avatar, stripJsonl(String(c.chatId)) + '.jsonl');
+    }
+
     // CHAT_CHANGED 是酒馆原生“选择面具”弹窗的触发点。
     // 本监听器注册为第一个执行：先把存档绑定的人设写进 chat_metadata.persona，
     // 酒馆随后就会按 chat 锁定直接选中，不再弹出 Select Persona。
@@ -1869,14 +1878,29 @@ var nqcArchive = (function(){
                 var opt = selectedOption();
                 if(!opt) return;
                 personaBindings[k] = { avatar:opt.key, name:opt.name };
+                try{
+                    if(currentChatBindingKey() === k){
+                        var cc = getContext();
+                        if(cc && cc.chatMetadata) cc.chatMetadata.persona = String(opt.key);
+                    }
+                }catch(e){}
                 saveSettings();
                 if(chip && chip.__nqcPaint) chip.__nqcPaint();
                 close();
                 nqcToast('已绑定：' + opt.name);
             }
             function unbindCurrent(){
-                if(!personaBindings[k]) return;
+                var prev = personaBindings[k];
+                if(!prev) return;
                 delete personaBindings[k];
+                try{
+                    if(currentChatBindingKey() === k){
+                        var cc = getContext();
+                        if(cc && cc.chatMetadata && String(cc.chatMetadata.persona || '') === String(prev.avatar || '')){
+                            delete cc.chatMetadata.persona;
+                        }
+                    }
+                }catch(e){}
                 saveSettings();
                 if(chip && chip.__nqcPaint) chip.__nqcPaint();
                 close();
