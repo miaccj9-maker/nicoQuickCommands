@@ -59,7 +59,7 @@ import { saveSettingsDebounced } from '../../../../script.js';
 import { extension_settings } from '../../../../scripts/extensions.js';
 
 const MODULE_NAME = 'nicoQuickCommands';
-const MODULE_VERSION = '1.7.5';
+const MODULE_VERSION = '1.7.6';
 
 // 默认指令（可增删，改动保存在扩展设置中，本地持久化）
 const DEFAULT_COMMANDS = [
@@ -461,7 +461,7 @@ function nqcToast(msg) {
    扩展重载时解绑旧事件、断开旧 Observer、清理定时器，不叠加、不卡顿。 */
 var nqcArchive = (function(){
     var MODULE_NAME = 'chat-archive-manager';
-    var MODULE_VERSION = '1.7.5';
+    var MODULE_VERSION = '1.7.6';
 
     /* ---------- 酒馆上下文桥接（防御式，取不到不拖垮主面板） ---------- */
     function getContext(){
@@ -823,6 +823,23 @@ var nqcArchive = (function(){
         return null;
     }
 
+    // 角色头像解析失败时，按存档文件名再兜底一次
+    function explicitPersonaBindingByFile(fileName){
+        ensureSettings();
+        if(!fileName) return null;
+        var base = stripJsonl(fileName).toLowerCase();
+        var keys = Object.keys(personaBindings);
+        for(var i = 0; i < keys.length; i++){
+            var k = keys[i];
+            var sep = k.indexOf('::');
+            if(sep < 0) continue;
+            if(stripJsonl(k.slice(sep + 2)).toLowerCase() !== base) continue;
+            var hit = personaBindings[k];
+            if(hit && hit.avatar) return { avatar: k.slice(0, sep), binding: hit };
+        }
+        return null;
+    }
+
     // 当前打开存档的绑定 key，用于绑定/解除时同步 chat_metadata.persona
     function currentChatBindingKey(){
         var c = getContext();
@@ -840,13 +857,13 @@ var nqcArchive = (function(){
             var c = getContext();
             if(!c || !c.chatMetadata) return;
             var base = stripJsonl(String(c.chatId || ''));
-            if(!base) return;
-            var avatar = '';
             var pending = pendingPersonaStamp;
-            if(pending && pending.chatBase && stripJsonl(pending.chatBase) === base){
+            var avatar = '';
+            if(pending && pending.avatar && (switching || !base || stripJsonl(pending.chatBase) === base)){
                 avatar = String(pending.avatar || '');
+                if(!base && pending.chatBase) base = stripJsonl(String(pending.chatBase));
             }
-            if(!avatar){
+            if(!avatar && base){
                 var chars = c.characters || [];
                 var idx = Number(c.characterId);
                 var ch = Number.isFinite(idx) ? chars[idx] : null;
@@ -859,16 +876,24 @@ var nqcArchive = (function(){
                     if(g && String(g.id) === String(c.groupId)){ avatar = String(g.avatar || g.id || ''); break; }
                 }
             }
-            if(!avatar) return;
+            if(!base) return;
             var keyFile = base + '.jsonl';
-            var b = explicitPersonaBindingFor(avatar, keyFile);
-            if((!b || !b.avatar) && c.groupId){
-                b = explicitPersonaBindingFor(String(c.groupId), keyFile);
+            var b = avatar ? explicitPersonaBindingFor(avatar, keyFile) : null;
+            if(!b || !b.avatar){
+                var byFile = explicitPersonaBindingByFile(keyFile);
+                if(byFile && (!avatar || byFile.avatar === avatar)) b = byFile.binding;
             }
-            if(!b || !b.avatar) return;
+            if(!b || !b.avatar){
+                console.log('[nqc-persona] CHAT_CHANGED 未找到存档绑定', { chatId: base, avatar: avatar });
+                return;
+            }
             var personas = (c.powerUserSettings && c.powerUserSettings.personas) || {};
-            if(!personas[b.avatar] && b.avatar !== 'user-default.png') return;
+            if(!personas[b.avatar] && b.avatar !== 'user-default.png'){
+                console.log('[nqc-persona] 绑定的人设不存在', b.avatar);
+                return;
+            }
             c.chatMetadata.persona = String(b.avatar);
+            console.log('[nqc-persona] 已写入存档绑定人设', { chatId: base, avatar: avatar, persona: c.chatMetadata.persona });
         }catch(e){}
     }
 
@@ -3971,6 +3996,7 @@ var nqcArchive = (function(){
 
         var stampBinding = explicitPersonaBindingFor(avatar, fileName);
         pendingPersonaStamp = (stampBinding && stampBinding.avatar) ? { avatar: String(stampBinding.avatar), chatBase: chatBase } : null;
+        console.log('[nqc-persona] loadChat 绑定检查', { avatar: avatar, fileName: fileName, chatBase: chatBase, bound: pendingPersonaStamp ? pendingPersonaStamp.avatar : null });
         switching = true;
         var prevChatFile = chars[idx] ? chars[idx].chat : undefined;
         markRowLoading(row, loadBtn, true);
@@ -4392,6 +4418,30 @@ var nqcArchive = (function(){
         if(!name) return;
         try{ c.eventSource.on(name, fn); boundEvents.push({ name:name, fn:fn }); }catch(e){}
     }
+    // 不依赖监听器排序：直接在 emit 入口先写入绑定人设，再交给酒馆所有监听器
+    function wrapChatChangedEmit(){
+        var c = getContext();
+        if(!c || !c.eventSource) return;
+        var es = c.eventSource;
+        if(es.__nqcChatEmitWrapped) return;
+        var orig = es.emit;
+        if(typeof orig !== 'function') return;
+        var et = c.eventTypes || c.event_types || {};
+        var chatChanged = et.CHAT_CHANGED;
+        if(!chatChanged) return;
+        es.__nqcChatEmitOrig = orig;
+        var wrapper = function(event){
+            try{
+                if(event === chatChanged) stampPersonaForChatChange();
+            }catch(e){}
+            return orig.apply(this, arguments);
+        };
+        es.emit = wrapper;
+        es.__nqcChatEmitWrapper = wrapper;
+        es.__nqcChatEmitWrapped = true;
+        console.log('[nqc-persona] CHAT_CHANGED 入口拦截已启用');
+    }
+
     function onEventFirst(type, fn){
         var c = getContext();
         if(!c || !c.eventSource) return;
@@ -4403,6 +4453,7 @@ var nqcArchive = (function(){
             else c.eventSource.on(name, fn);
             boundEvents.push({ name: name, fn: fn });
         }catch(e){}
+        if(type === 'CHAT_CHANGED') wrapChatChangedEmit();
     }
     function onPanelOpen(){
         if(!arcPage) return;
@@ -4424,6 +4475,15 @@ var nqcArchive = (function(){
                 try{ c.eventSource.removeListener(b.name, b.fn); }
                 catch(e){ try{ c.eventSource.off(b.name, b.fn); }catch(_){} }
             });
+            try{
+                var es = c.eventSource;
+                if(es.__nqcChatEmitWrapped && es.__nqcChatEmitWrapper === es.emit && es.__nqcChatEmitOrig){
+                    es.emit = es.__nqcChatEmitOrig;
+                    delete es.__nqcChatEmitWrapped;
+                    delete es.__nqcChatEmitWrapper;
+                    delete es.__nqcChatEmitOrig;
+                }
+            }catch(e){}
         }
         boundEvents = [];
         timers.forEach(function(id){ clearTimeout(id); });
